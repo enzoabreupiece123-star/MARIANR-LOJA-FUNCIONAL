@@ -3,6 +3,9 @@ import { Product, Category, StoreSettings, Order, OrderStatus } from '../types';
 
 let supabaseClient: SupabaseClient | null = null;
 
+const DEFAULT_SUPABASE_URL = 'https://fwshxvpuplngzagncikl.supabase.co';
+const DEFAULT_SUPABASE_KEY = 'sb_publishable_VMKBftDZPie6WRyBB4JIMA_kFxHfUP0';
+
 export function getStoredSupabaseConfig(): { url: string; key: string } {
   const env = (import.meta as any).env || {};
   const envUrl = env.VITE_SUPABASE_URL || '';
@@ -11,8 +14,8 @@ export function getStoredSupabaseConfig(): { url: string; key: string } {
   const localUrl = localStorage.getItem('mariane_supabase_url') || '';
   const localKey = localStorage.getItem('mariane_supabase_key') || '';
 
-  const url = localUrl.trim() || envUrl.trim();
-  const key = localKey.trim() || envKey.trim();
+  const url = localUrl.trim() || envUrl.trim() || DEFAULT_SUPABASE_URL;
+  const key = localKey.trim() || envKey.trim() || DEFAULT_SUPABASE_KEY;
 
   return { url, key };
 }
@@ -78,7 +81,7 @@ export async function fetchRemoteProducts(): Promise<Product[] | null> {
       return null;
     }
 
-    if (data && data.length > 0) {
+    if (data) {
       return data.map((item: any) => ({
         id: String(item.id),
         name: item.name,

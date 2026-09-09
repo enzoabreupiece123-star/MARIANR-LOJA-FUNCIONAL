@@ -170,7 +170,7 @@ export const INITIAL_SETTINGS: StoreSettings = {
   instagram: '@marianemoreiraconcepts',
   address: 'Ateliê & Showroom - Atendimento Exclusivo com Hora Marcada',
   adminPin: '1234',
-  supabaseUrl: '',
-  supabaseAnonKey: '',
+  supabaseUrl: 'https://fwshxvpuplngzagncikl.supabase.co',
+  supabaseAnonKey: 'sb_publishable_VMKBftDZPie6WRyBB4JIMA_kFxHfUP0',
   freeShippingAbove: 499.00
 };

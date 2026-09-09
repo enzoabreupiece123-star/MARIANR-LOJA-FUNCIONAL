@@ -136,7 +136,7 @@ export default function App() {
           fetchRemoteSettings(),
           fetchRemoteOrders(),
         ]);
-        if (remoteProds && remoteProds.length > 0) {
+        if (remoteProds !== null) {
           setProducts(remoteProds);
         }
         if (remoteCats && remoteCats.length > 0) {
@@ -145,7 +145,7 @@ export default function App() {
         if (remoteSets) {
           setSettings((prev) => ({ ...prev, ...remoteSets }));
         }
-        if (remoteOrders && remoteOrders.length > 0) {
+        if (remoteOrders !== null) {
           setOrders(remoteOrders);
         }
         return;
