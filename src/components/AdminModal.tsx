@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X, Plus, Trash2, Edit3, ShieldCheck, Database, Key, Sparkles, Check,
-  AlertCircle, Image as ImageIcon, Save, ArrowLeft, RefreshCw, HelpCircle, Eye
+  AlertCircle, Image as ImageIcon, Save, ArrowLeft, RefreshCw, HelpCircle, Eye,
+  EyeOff, Lock, AlertTriangle
 } from 'lucide-react';
 import { Product, Category, StoreSettings } from '../types';
 import { formatCurrency } from '../lib/utils';
@@ -79,22 +80,70 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [storeSettings, setStoreSettings] = useState<StoreSettings>(settings);
   const [settingsSavedToast, setSettingsSavedToast] = useState(false);
 
+  // Sync settings when prop updates
+  useEffect(() => {
+    setStoreSettings(settings);
+  }, [settings]);
+
+  // Login PIN visibility
+  const [showLoginPin, setShowLoginPin] = useState(false);
+
+  // Password Change state
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [passwordChangeStatus, setPasswordChangeStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   // Supabase test state
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
 
   if (!isOpen) return null;
 
-  // Handle PIN Login
+  // Handle PIN Login (strictly against the configured PIN, no hardcoded bypass)
   const handlePinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (pinInput.trim() === settings.adminPin || pinInput.trim() === '1234') {
+    const activePin = (settings.adminPin || '1234').trim();
+    if (pinInput.trim() === activePin) {
       setIsAuthenticated(true);
       setPinError(false);
+      setPinInput('');
     } else {
       setPinError(true);
-      setPinInput('');
     }
+  };
+
+  // Dedicated Password Change Handler
+  const handleUpdatePassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.trim().length < 4) {
+      setPasswordChangeStatus({
+        type: 'error',
+        text: 'A nova senha deve ter no mínimo 4 caracteres.',
+      });
+      return;
+    }
+    if (newPassword.trim() !== confirmPassword.trim()) {
+      setPasswordChangeStatus({
+        type: 'error',
+        text: 'A confirmação de senha não coincide com a nova senha digitada.',
+      });
+      return;
+    }
+
+    const updated = {
+      ...storeSettings,
+      adminPin: newPassword.trim(),
+    };
+    setStoreSettings(updated);
+    onSaveSettings(updated);
+    setNewPassword('');
+    setConfirmPassword('');
+    setPasswordChangeStatus({
+      type: 'success',
+      text: '✅ Senha atualizada com sucesso! O PIN antigo 1234 foi desativado e ninguém mais consegue usá-lo.',
+    });
+    setTimeout(() => setPasswordChangeStatus(null), 5000);
   };
 
   // Open Form for New Product
@@ -281,36 +330,47 @@ export const AdminModal: React.FC<AdminModalProps> = ({
         {!isAuthenticated ? (
           <div className="p-8 sm:p-12 flex flex-col items-center justify-center text-center space-y-5 my-auto">
             <div className="w-16 h-16 rounded-full bg-[#faf5ec] flex items-center justify-center text-[#8e6e34] border border-[#e8dfd2]">
-              <Key className="w-8 h-8" />
+              <Lock className="w-8 h-8" />
             </div>
 
             <div className="space-y-1 max-w-sm">
               <h3 className="font-serif text-2xl font-medium text-[#1c1917]">
-                Acesso Restrito da Administradora
+                Acesso Exclusivo da Administradora
               </h3>
               <p className="text-xs text-[#786e64] leading-relaxed">
-                Digite o seu PIN de 4 dígitos para postar novas roupas e alterar preços. (PIN padrão: <strong className="text-[#1c1917]">1234</strong>)
+                Área restrita à dona da loja. Digite sua senha ou PIN de segurança para gerenciar as roupas, preços e pedidos.
               </p>
             </div>
 
             <form onSubmit={handlePinSubmit} className="w-full max-w-xs space-y-4">
-              <input
-                id="admin-pin-input"
-                type="password"
-                maxLength={8}
-                autoFocus
-                placeholder="PIN de acesso..."
-                value={pinInput}
-                onChange={(e) => {
-                  setPinInput(e.target.value);
-                  setPinError(false);
-                }}
-                className="w-full text-center tracking-[0.4em] font-mono text-xl py-3 px-4 bg-[#faf8f5] border border-[#d5cbbe] rounded-xl focus:bg-white focus:border-[#8e6e34] focus:outline-none"
-              />
+              <div className="relative">
+                <input
+                  id="admin-pin-input"
+                  type={showLoginPin ? 'text' : 'password'}
+                  maxLength={30}
+                  autoFocus
+                  placeholder="Digite sua senha ou PIN..."
+                  value={pinInput}
+                  onChange={(e) => {
+                    setPinInput(e.target.value);
+                    setPinError(false);
+                  }}
+                  className="w-full text-center tracking-[0.2em] font-mono text-base py-3 px-10 bg-[#faf8f5] border border-[#d5cbbe] rounded-xl focus:bg-white focus:border-[#8e6e34] focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowLoginPin(!showLoginPin)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 p-1"
+                  tabIndex={-1}
+                  aria-label={showLoginPin ? 'Ocultar senha' : 'Ver senha'}
+                >
+                  {showLoginPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
 
               {pinError && (
-                <div className="text-xs text-red-600 font-medium">
-                  PIN incorreto. Tente '1234' ou verifique o PIN configurado.
+                <div className="text-xs text-red-600 font-medium bg-red-50 py-2 px-3 rounded-lg border border-red-200">
+                  Senha incorreta. Verifique os caracteres e tente novamente.
                 </div>
               )}
 
@@ -319,13 +379,32 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 id="admin-login-submit-button"
                 className="w-full py-3 bg-[#1c1917] hover:bg-[#322c29] text-white rounded-xl text-xs uppercase tracking-[0.15em] font-semibold transition-all shadow-sm"
               >
-                Entrar no Painel
+                Acessar Painel
               </button>
             </form>
           </div>
         ) : (
           /* Authenticated Dashboard */
           <div className="flex-1 flex flex-col min-h-0">
+            {/* Security Warning Banner if PIN is still default */}
+            {(!settings.adminPin || settings.adminPin === '1234') && (
+              <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 sm:px-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-amber-900">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>
+                    <strong>Atenção de Segurança:</strong> Sua loja ainda está com a senha padrão inicial (1234). Altere agora para uma senha pessoal para que ninguém mais consiga acessar!
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('settings')}
+                  className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg shrink-0 transition-colors text-[11px]"
+                >
+                  Trocar Senha Agora
+                </button>
+              </div>
+            )}
+
             {/* Nav Tabs */}
             <div className="flex items-center gap-1 px-4 sm:px-6 bg-[#faf8f5] border-b border-[#e8dfd2] overflow-x-auto no-scrollbar">
               <button
@@ -808,7 +887,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
               {/* TAB 4: SETTINGS */}
               {activeTab === 'settings' && (
-                <form onSubmit={handleSaveSettingsSubmit} className="space-y-6 max-w-2xl mx-auto">
+                <div className="space-y-8 max-w-2xl mx-auto">
+                  <form onSubmit={handleSaveSettingsSubmit} className="space-y-6">
                   <div>
                     <h3 className="font-serif text-lg font-medium text-[#1c1917]">
                       Configurações da Loja, WhatsApp e PIX
@@ -897,19 +977,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         />
                       </div>
                     </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-[#5c544c] mb-1">
-                        PIN de Acesso da Administradora (4 dígitos)
-                      </label>
-                      <input
-                        type="text"
-                        maxLength={8}
-                        value={storeSettings.adminPin}
-                        onChange={(e) => setStoreSettings({ ...storeSettings, adminPin: e.target.value })}
-                        className="w-full text-xs p-3 bg-[#faf8f5] border border-[#d5cbbe] rounded-xl focus:bg-white focus:border-[#8e6e34] focus:outline-none font-mono"
-                      />
-                    </div>
                   </div>
 
                   <div className="flex justify-end pt-4 border-t border-[#e8dfd2]">
@@ -918,11 +985,116 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                       className="px-6 py-2.5 bg-[#1c1917] hover:bg-[#322c29] text-white text-xs font-semibold uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center gap-2"
                     >
                       <Save className="w-4 h-4 text-[#e6c687]" />
-                      Salvar Alterações
+                      Salvar Dados da Loja e PIX
                     </button>
                   </div>
                 </form>
-              )}
+
+                {/* DEDICATED PASSWORD / PIN SECURITY FORM */}
+                <div className="p-6 bg-white border border-[#e8dfd2] rounded-2xl space-y-4 shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-[#f0ebe1]">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-[#faf5ec] flex items-center justify-center text-[#8e6e34] border border-[#e8dfd2]">
+                        <Lock className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-serif text-base font-semibold text-[#1c1917]">
+                          Segurança & Senha da Dona
+                        </h4>
+                        <p className="text-[11px] text-[#786e64]">
+                          Crie uma senha pessoal exclusiva para que somente você tenha acesso ao painel.
+                        </p>
+                      </div>
+                    </div>
+
+                    <span
+                      className={`text-[10px] font-semibold px-2.5 py-1 rounded-full w-fit ${
+                        !storeSettings.adminPin || storeSettings.adminPin === '1234'
+                          ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                          : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                      }`}
+                    >
+                      {!storeSettings.adminPin || storeSettings.adminPin === '1234'
+                        ? '⚠️ Senha Padrão (Altere Já)'
+                        : '🔒 Senha Pessoal Protegida'}
+                    </span>
+                  </div>
+
+                  <form onSubmit={handleUpdatePassword} className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-[#5c544c] mb-1">
+                          Nova Senha ou PIN *
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showNewPassword ? 'text' : 'password'}
+                            required
+                            placeholder="Mínimo 4 caracteres (números ou letras)..."
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            className="w-full text-xs p-3 pr-10 bg-[#faf8f5] border border-[#d5cbbe] rounded-xl focus:bg-white focus:border-[#8e6e34] focus:outline-none font-mono"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowNewPassword(!showNewPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 p-1"
+                            tabIndex={-1}
+                          >
+                            {showNewPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-[#5c544c] mb-1">
+                          Confirmar Nova Senha *
+                        </label>
+                        <input
+                          type={showNewPassword ? 'text' : 'password'}
+                          required
+                          placeholder="Repita a nova senha..."
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          className="w-full text-xs p-3 bg-[#faf8f5] border border-[#d5cbbe] rounded-xl focus:bg-white focus:border-[#8e6e34] focus:outline-none font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="text-[11px] text-[#786e64] bg-[#faf8f5] p-3 rounded-xl border border-[#e8dfd2] space-y-1">
+                      <p className="font-semibold text-[#1c1917]">Como funciona a proteção:</p>
+                      <ul className="list-disc pl-4 space-y-0.5">
+                        <li>Você pode usar números, letras ou símbolos (ex: <code>8392</code> ou <code>Mariane#2026</code>).</li>
+                        <li>Assim que você clicar em <strong>"Atualizar Senha"</strong>, a senha antiga <strong>1234 deixa de funcionar imediatamente</strong> em qualquer computador ou celular.</li>
+                        <li>A nova senha fica salva no seu banco de dados Supabase e no seu navegador.</li>
+                      </ul>
+                    </div>
+
+                    {passwordChangeStatus && (
+                      <div
+                        className={`text-xs p-3 rounded-xl border font-medium ${
+                          passwordChangeStatus.type === 'success'
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                            : 'bg-red-50 text-red-800 border-red-300'
+                        }`}
+                      >
+                        {passwordChangeStatus.text}
+                      </div>
+                    )}
+
+                    <div className="flex justify-end pt-2">
+                      <button
+                        type="submit"
+                        className="px-6 py-2.5 bg-[#8e6e34] hover:bg-[#735a2e] text-white text-xs font-semibold uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center gap-2"
+                      >
+                        <Lock className="w-4 h-4" />
+                        Atualizar Senha de Acesso
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
 
               {/* TAB 5: SUPABASE & RENDER */}
               {activeTab === 'supabase' && (
@@ -982,16 +1154,25 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-[#5c544c] mb-1">
-                        Supabase Anon / Public Key
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-semibold text-[#5c544c]">
+                          Supabase Publishable Key (chave pública / anon) *
+                        </label>
+                        <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                          Use a Publishable Key
+                        </span>
+                      </div>
                       <input
                         type="password"
-                        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
+                        placeholder="sb_pub_... ou eyJhbGciOiJIUzI1NiIsInR5cCI6..."
                         value={storeSettings.supabaseAnonKey}
                         onChange={(e) => setStoreSettings({ ...storeSettings, supabaseAnonKey: e.target.value })}
                         className="w-full text-xs p-2.5 bg-white border border-[#d5cbbe] rounded-lg focus:outline-none font-mono"
                       />
+                      <p className="text-[10px] text-[#786e64] mt-1">
+                        ✅ <strong>Use a Publishable Key:</strong> Ela é a chave segura feita para o site no navegador.<br />
+                        ⛔ <strong>NÃO use a Secret Key:</strong> A secret key (service_role) é administrativa e nunca deve ser colocada no site.
+                      </p>
                     </div>
 
                     {testResult && (

@@ -15,6 +15,11 @@ import {
   fetchRemoteProducts,
   upsertRemoteProduct,
   deleteRemoteProduct,
+  fetchRemoteCategories,
+  upsertRemoteCategory,
+  deleteRemoteCategory,
+  fetchRemoteSettings,
+  upsertRemoteSettings,
   getStoredSupabaseConfig,
 } from './lib/supabase';
 import { Sparkles, SlidersHorizontal, ShoppingBag, Check, Phone } from 'lucide-react';
@@ -105,9 +110,19 @@ export default function App() {
       const sb = getSupabase();
       if (sb) {
         setIsSupabaseConnected(true);
-        const remoteProds = await fetchRemoteProducts();
+        const [remoteProds, remoteCats, remoteSets] = await Promise.all([
+          fetchRemoteProducts(),
+          fetchRemoteCategories(),
+          fetchRemoteSettings(),
+        ]);
         if (remoteProds && remoteProds.length > 0) {
           setProducts(remoteProds);
+        }
+        if (remoteCats && remoteCats.length > 0) {
+          setCategories(remoteCats);
+        }
+        if (remoteSets) {
+          setSettings((prev) => ({ ...prev, ...remoteSets }));
         }
         return;
       }
@@ -203,19 +218,28 @@ export default function App() {
   };
 
   // Admin Category Operations
-  const handleSaveCategory = (newCategory: Category) => {
+  const handleSaveCategory = async (newCategory: Category) => {
     setCategories((prev) => [...prev, newCategory]);
+    if (isSupabaseConnected) {
+      await upsertRemoteCategory(newCategory);
+    }
     triggerToast(`Categoria "${newCategory.name}" criada com sucesso!`);
   };
 
-  const handleDeleteCategory = (categoryId: string) => {
+  const handleDeleteCategory = async (categoryId: string) => {
     setCategories((prev) => prev.filter((c) => c.id !== categoryId));
+    if (isSupabaseConnected) {
+      await deleteRemoteCategory(categoryId);
+    }
     triggerToast('Categoria removida.');
   };
 
   // Admin Settings Operations
-  const handleSaveSettings = (newSettings: StoreSettings) => {
+  const handleSaveSettings = async (newSettings: StoreSettings) => {
     setSettings(newSettings);
+    if (isSupabaseConnected) {
+      await upsertRemoteSettings(newSettings);
+    }
     triggerToast('Configurações atualizadas!');
   };
 

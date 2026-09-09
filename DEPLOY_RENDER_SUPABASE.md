@@ -26,7 +26,10 @@ Este guia prático foi preparado especialmente para você colocar a sua loja de 
 6. Pegue as suas chaves de acesso:
    - No menu lateral, clique na engrenagem de configurações **"Project Settings"** > **"API"**.
    - Copie o **Project URL** (ex: `https://xyzabcdefg.supabase.co`).
-   - Copie a chave **Project API Keys** chamada `anon` / `public`.
+   - Copie a **Publishable key** (também chamada de `anon` / `public`).
+   - ⚠️ **MUITO IMPORTANTE:**
+     - ✅ **Use a Publishable key:** Esta é a chave pública correta para colocar no seu site e nas variáveis da Render (`VITE_SUPABASE_ANON_KEY`).
+     - ⛔ **NÃO use a Secret key:** A Secret key (antiga `service_role`) tem acesso total administrativo e nunca deve ser colocada no site ou exposta ao público. Guarde-a em segredo.
 
 ---
 

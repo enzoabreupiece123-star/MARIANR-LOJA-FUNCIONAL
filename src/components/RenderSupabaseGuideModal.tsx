@@ -135,9 +135,13 @@ VITE_STORE_PIX_NAME=Mariane Moreira Concepts`;
               <pre>{sqlCode}</pre>
             </div>
 
-            <p className="text-[11px] text-[#786e64]">
-              Após executar o SQL, pegue suas chaves em <strong>Project Settings &gt; API</strong> (Project URL e Chave anon/public).
-            </p>
+            <div className="text-[11px] text-[#786e64] space-y-1 bg-[#f0ebe1] p-3 rounded-lg border border-[#e4dcd0]">
+              <div className="font-semibold text-[#1c1917]">Qual chave usar no site?</div>
+              <p>
+                ✅ <strong>Publishable key</strong> (ou <code>anon/public</code>): <strong>É esta que você deve usar!</strong> Ela é a chave pública segura projetada para sites e navegadores.<br />
+                ⛔ <strong>Secret key</strong> (ou <code>service_role</code>): <strong>NUNCA use no site!</strong> Ela é uma chave secreta com superpoderes de administração e não deve ser exposta.
+              </p>
+            </div>
           </div>
 
           {/* Step 2: Render */}

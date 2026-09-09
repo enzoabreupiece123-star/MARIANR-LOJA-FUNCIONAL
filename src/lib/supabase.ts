@@ -152,3 +152,94 @@ export async function deleteRemoteProduct(id: string): Promise<boolean> {
     return false;
   }
 }
+
+export async function fetchRemoteCategories(): Promise<Category[] | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+
+  try {
+    const { data, error } = await sb.from('categories').select('*').order('created_at', { ascending: true });
+    if (error || !data || data.length === 0) return null;
+    return data.map((c: any) => ({
+      id: String(c.id),
+      name: c.name,
+      slug: c.slug,
+      description: c.description || '',
+    }));
+  } catch {
+    return null;
+  }
+}
+
+export async function upsertRemoteCategory(category: Category): Promise<boolean> {
+  const sb = getSupabase();
+  if (!sb) return false;
+
+  try {
+    const { error } = await sb.from('categories').upsert({
+      id: category.id,
+      name: category.name,
+      slug: category.slug,
+      description: category.description || '',
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteRemoteCategory(id: string): Promise<boolean> {
+  const sb = getSupabase();
+  if (!sb) return false;
+
+  try {
+    const { error } = await sb.from('categories').delete().eq('id', id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchRemoteSettings(): Promise<Partial<StoreSettings> | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+
+  try {
+    const { data, error } = await sb.from('store_settings').select('*').eq('id', 'default').single();
+    if (error || !data) return null;
+    return {
+      whatsapp: data.whatsapp,
+      pixKey: data.pix_key,
+      pixKeyType: data.pix_key_type as any,
+      pixBeneficiary: data.pix_beneficiary,
+      pixCity: data.pix_city,
+      instagram: data.instagram,
+      adminPin: data.admin_pin || '1234',
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function upsertRemoteSettings(settings: StoreSettings): Promise<boolean> {
+  const sb = getSupabase();
+  if (!sb) return false;
+
+  try {
+    const { error } = await sb.from('store_settings').upsert({
+      id: 'default',
+      whatsapp: settings.whatsapp,
+      pix_key: settings.pixKey,
+      pix_key_type: settings.pixKeyType,
+      pix_beneficiary: settings.pixBeneficiary,
+      pix_city: settings.pixCity,
+      instagram: settings.instagram,
+      admin_pin: settings.adminPin || '1234',
+      updated_at: new Date().toISOString(),
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+

@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS public.categories (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 3. Criação da tabela de configurações da loja (WhatsApp, Pix, etc)
+-- 3. Criação da tabela de configurações da loja (WhatsApp, Pix, Senha Admin, etc)
 CREATE TABLE IF NOT EXISTS public.store_settings (
     id TEXT PRIMARY KEY DEFAULT 'default',
     whatsapp TEXT DEFAULT '5511999999999',
@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS public.store_settings (
     pix_beneficiary TEXT DEFAULT 'Mariane Moreira Concepts',
     pix_city TEXT DEFAULT 'São Paulo',
     instagram TEXT DEFAULT '@marianemoreiraconcepts',
+    admin_pin TEXT DEFAULT '1234',
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 

@@ -100,7 +100,7 @@ export const Footer: React.FC<FooterProps> = ({ settings, onOpenAdmin, onOpenGui
                 <span className="flex items-center gap-2">
                   <ShieldCheck className="w-3.5 h-3.5 text-[#c5a059]" /> Painel da Dona
                 </span>
-                <span className="text-[10px] text-stone-500 font-mono">PIN: 1234</span>
+                <span className="text-[10px] text-stone-400">Área Restrita</span>
               </button>
 
               <button
