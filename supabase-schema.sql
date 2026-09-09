@@ -1,15 +1,39 @@
 -- ==============================================================================
--- MARIANE MOREIRA CONCEPTS - ESQUEMA DO BANCO DE DADOS SUPABASE (GRATUITO)
+-- MARIANE MOREIRA CONCEPTS - ESQUEMA 100% LIMPO E DEFINITIVO DO SUPABASE
 -- ==============================================================================
--- Como usar:
--- 1. Acesse o seu projeto gratuito no Supabase (https://supabase.com)
--- 2. No menu lateral esquerdo, clique em "SQL Editor"
--- 3. Clique em "New query"
--- 4. Cole todo este código abaixo e clique no botão verde "Run" (Executar)
+-- Instruções:
+-- 1. Acesse o painel do Supabase: https://supabase.com
+-- 2. No menu lateral esquerdo, clique no ícone "SQL Editor" (>_)
+-- 3. Clique no botão "New query"
+-- 4. Cole TODO este script abaixo e clique no botão verde "Run" (ou Ctrl + Enter)
 -- ==============================================================================
 
--- 1. Criação da tabela de produtos
-CREATE TABLE IF NOT EXISTS public.products (
+-- 0. EXCLUIR TABELAS ANTIGAS PARA RECOMEÇAR 100% LIMPO (SEM ERROS OU DADOS RESIDUAIS)
+DROP TABLE IF EXISTS public.orders CASCADE;
+DROP TABLE IF EXISTS public.products CASCADE;
+DROP TABLE IF EXISTS public.categories CASCADE;
+DROP TABLE IF EXISTS public.store_settings CASCADE;
+
+-- 1. TABELA DE CONFIGURAÇÕES DA LOJA (Senha Admin, WhatsApp, PIX, etc)
+CREATE TABLE public.store_settings (
+    id TEXT PRIMARY KEY DEFAULT 'default',
+    whatsapp TEXT DEFAULT '5511999999999',
+    pix_key TEXT DEFAULT 'contato@marianemoreira.com.br',
+    pix_key_type TEXT DEFAULT 'email',
+    pix_beneficiary TEXT DEFAULT 'Mariane Moreira Concepts',
+    pix_city TEXT DEFAULT 'São Paulo',
+    instagram TEXT DEFAULT '@marianemoreiraconcepts',
+    admin_pin TEXT DEFAULT '1234',
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Inserir linha padrão de configurações imediatamente
+INSERT INTO public.store_settings (id, admin_pin, whatsapp, pix_key, pix_key_type, pix_beneficiary, pix_city, instagram)
+VALUES ('default', '1234', '5511999999999', 'contato@marianemoreira.com.br', 'email', 'Mariane Moreira Concepts', 'São Paulo', '@marianemoreiraconcepts')
+ON CONFLICT (id) DO NOTHING;
+
+-- 2. TABELA DE PRODUTOS / ROUPAS (Começa vazia para você cadastrar as peças reais!)
+CREATE TABLE public.products (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     category TEXT NOT NULL,
@@ -28,11 +52,8 @@ CREATE TABLE IF NOT EXISTS public.products (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Garantir coluna stock_quantity se a tabela já existia:
-ALTER TABLE public.products ADD COLUMN IF NOT EXISTS stock_quantity INTEGER DEFAULT 5;
-
--- 2. Criação da tabela de categorias (opcional para sincronização remota)
-CREATE TABLE IF NOT EXISTS public.categories (
+-- 3. TABELA DE CATEGORIAS
+CREATE TABLE public.categories (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     slug TEXT NOT NULL,
@@ -40,21 +61,20 @@ CREATE TABLE IF NOT EXISTS public.categories (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 3. Criação da tabela de configurações da loja (WhatsApp, Pix, Senha Admin, etc)
-CREATE TABLE IF NOT EXISTS public.store_settings (
-    id TEXT PRIMARY KEY DEFAULT 'default',
-    whatsapp TEXT DEFAULT '5511999999999',
-    pix_key TEXT DEFAULT 'contato@marianemoreira.com.br',
-    pix_key_type TEXT DEFAULT 'email',
-    pix_beneficiary TEXT DEFAULT 'Mariane Moreira Concepts',
-    pix_city TEXT DEFAULT 'São Paulo',
-    instagram TEXT DEFAULT '@marianemoreiraconcepts',
-    admin_pin TEXT DEFAULT '1234',
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
+-- Inserir categorias oficiais da loja
+INSERT INTO public.categories (id, name, slug, description)
+VALUES 
+  ('cat-1', 'Vestidos', 'vestidos', 'Modelos sofisticados para todas as ocasiões'),
+  ('cat-2', 'Conjuntos', 'conjuntos', 'Combinações elegantes e práticas'),
+  ('cat-3', 'Alfaiataria', 'alfaiataria', 'Cortes precisos e caimento estruturado'),
+  ('cat-4', 'Blusas', 'blusas', 'Camisas de seda, tricots finos e regatas clássicas'),
+  ('cat-5', 'Calças', 'calcas', 'Modelagens impecáveis em alfaiataria e tecidos nobres'),
+  ('cat-6', 'Saias', 'saias', 'Saias mídi, lápis e evasê'),
+  ('cat-7', 'Acessórios', 'acessorios', 'Complementos para elevar qualquer look')
+ON CONFLICT (id) DO NOTHING;
 
--- 4. Criação da tabela de Pedidos dos Clientes
-CREATE TABLE IF NOT EXISTS public.orders (
+-- 4. TABELA DE PEDIDOS DE CLIENTES
+CREATE TABLE public.orders (
     id TEXT PRIMARY KEY,
     customer_name TEXT NOT NULL,
     customer_phone TEXT NOT NULL,
@@ -76,124 +96,36 @@ CREATE TABLE IF NOT EXISTS public.orders (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 5. Habilitar Row Level Security (RLS)
+-- 5. HABILITAR ROW LEVEL SECURITY (RLS)
+ALTER TABLE public.store_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.store_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 
--- 6. Criar Políticas de Acesso (Permitir leitura e escrita para a chave anônima da loja)
--- Leitura pública para todos os visitantes da loja:
-CREATE POLICY "Permitir leitura pública de produtos" 
-    ON public.products FOR SELECT 
-    USING (true);
+-- Conceder permissões totais para o perfil público (anon) e autenticado:
+GRANT ALL ON TABLE public.store_settings TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.products TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.categories TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.orders TO anon, authenticated, service_role;
 
--- Gravação permitida (para a administradora cadastrar e alterar produtos):
-CREATE POLICY "Permitir inserção e atualização de produtos" 
-    ON public.products FOR ALL 
-    USING (true) 
-    WITH CHECK (true);
+-- 6. POLÍTICAS DE ACESSO LIVRE PARA O SITE E O PAINEL
+CREATE POLICY "Acesso irrestrito configuracoes" ON public.store_settings FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Acesso irrestrito produtos" ON public.products FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Acesso irrestrito categorias" ON public.categories FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Acesso irrestrito pedidos" ON public.orders FOR ALL USING (true) WITH CHECK (true);
 
--- Políticas para categorias:
-CREATE POLICY "Permitir leitura pública de categorias" 
-    ON public.categories FOR SELECT 
-    USING (true);
-
-CREATE POLICY "Permitir gravação de categorias" 
-    ON public.categories FOR ALL 
-    USING (true) 
-    WITH CHECK (true);
-
--- Políticas para configurações:
-CREATE POLICY "Permitir leitura de configurações" 
-    ON public.store_settings FOR SELECT 
-    USING (true);
-
-CREATE POLICY "Permitir atualização de configurações" 
-    ON public.store_settings FOR ALL 
-    USING (true) 
-    WITH CHECK (true);
-
--- Políticas para pedidos:
-CREATE POLICY "Permitir leitura de pedidos" 
-    ON public.orders FOR SELECT 
-    USING (true);
-
-CREATE POLICY "Permitir criação e atualização de pedidos" 
-    ON public.orders FOR ALL 
-    USING (true) 
-    WITH CHECK (true);
-
--- 6. Inserir produtos iniciais de exemplo da coleção Mariane Moreira Concepts
-INSERT INTO public.products (id, name, category, price, original_price, images, description, details, sizes, colors, in_stock, is_new, is_featured)
-VALUES 
-(
-  'prod-1',
-  'Vestido Midi Linho Riviera Terracota',
-  'Vestidos',
-  349.90,
-  389.90,
-  ARRAY['https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=1000&q=80', 'https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?auto=format&fit=crop&w=1000&q=80'],
-  'Vestido midi confeccionado em puro linho com decote quadrado, fenda lateral sutil e faixa para amarração na cintura. Caimento impecável e fresco.',
-  ARRAY['Composição: 70% Linho, 30% Viscose de reflorestamento', 'Forro 100% algodão toque de seda', 'Fechamento por zíper invisível posterior', 'Bolsos laterais embutidos'],
-  ARRAY['P (38)', 'M (40)', 'G (42)'],
-  ARRAY['Terracota', 'Off-White', 'Verde Oliva'],
-  true,
-  true,
-  true
-),
-(
-  'prod-2',
-  'Conjunto Colete & Pantalona Milano Areia',
-  'Conjuntos',
-  459.00,
-  NULL,
-  ARRAY['https://images.unsplash.com/photo-1550614000-4895a10e1bfd?auto=format&fit=crop&w=1000&q=80', 'https://images.unsplash.com/photo-1496747611176-843222e1e57c?auto=format&fit=crop&w=1000&q=80'],
-  'Conjunto sofisticado em alfaiataria premium composto por colete assimétrico com botões forrados e calça pantalona de cós alto estruturado.',
-  ARRAY['Tecido: Alfaiataria Crepe Premium com elastano', 'Colete com botões forrados manualmente no mesmo tom', 'Calça com bolsos faca e passantes elegantes'],
-  ARRAY['36', '38', '40', '42'],
-  ARRAY['Areia', 'Preto Clássico', 'Azul Marinho'],
-  true,
-  true,
-  true
-),
-(
-  'prod-3',
-  'Blazer Oversized Alfaiataria Saint Germain',
-  'Alfaiataria',
-  489.90,
-  529.90,
-  ARRAY['https://images.unsplash.com/photo-1548624149-f9b1859aa9d0?auto=format&fit=crop&w=1000&q=80', 'https://images.unsplash.com/photo-1584273143981-41c073dfe8f8?auto=format&fit=crop&w=1000&q=80'],
-  'A peça statement do guarda-roupa da mulher contemporânea. Corte estruturado com ombreiras discretas e forro acetinado.',
-  ARRAY['Alfaiataria encorpada com caimento impecável', 'Lapela notched clássica e botões rajados em tartaruga', 'Bolsos embutidos com portinhola'],
-  ARRAY['P', 'M', 'G'],
-  ARRAY['Camel', 'Chumbo', 'Off-White'],
-  true,
-  false,
-  true
-)
-ON CONFLICT (id) DO NOTHING;
-
--- 7. Bucket de Armazenamento de Fotos (Supabase Storage)
--- Cria o bucket 'product-images' público para receber as fotos enviadas do celular ou computador
+-- 7. BUCKET DE ARMAZENAMENTO DE FOTOS (SUPABASE STORAGE)
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('product-images', 'product-images', true)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET public = true;
 
--- Políticas de acesso para o bucket de fotos
-DROP POLICY IF EXISTS "Fotos de produtos são públicas" ON storage.objects;
-CREATE POLICY "Fotos de produtos são públicas" ON storage.objects
-    FOR SELECT USING (bucket_id = 'product-images');
+-- Políticas para upload e visualização das fotos das roupas
+DROP POLICY IF EXISTS "Fotos publicas leitura" ON storage.objects;
+DROP POLICY IF EXISTS "Fotos publicas upload" ON storage.objects;
+DROP POLICY IF EXISTS "Fotos publicas update" ON storage.objects;
+DROP POLICY IF EXISTS "Fotos publicas delete" ON storage.objects;
 
-DROP POLICY IF EXISTS "Permitir upload de fotos no bucket" ON storage.objects;
-CREATE POLICY "Permitir upload de fotos no bucket" ON storage.objects
-    FOR INSERT WITH CHECK (bucket_id = 'product-images');
-
-DROP POLICY IF EXISTS "Permitir atualizar fotos no bucket" ON storage.objects;
-CREATE POLICY "Permitir atualizar fotos no bucket" ON storage.objects
-    FOR UPDATE USING (bucket_id = 'product-images');
-
-DROP POLICY IF EXISTS "Permitir deletar fotos no bucket" ON storage.objects;
-CREATE POLICY "Permitir deletar fotos no bucket" ON storage.objects
-    FOR DELETE USING (bucket_id = 'product-images');
-
+CREATE POLICY "Fotos publicas leitura" ON storage.objects FOR SELECT USING (bucket_id = 'product-images');
+CREATE POLICY "Fotos publicas upload" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'product-images');
+CREATE POLICY "Fotos publicas update" ON storage.objects FOR UPDATE USING (bucket_id = 'product-images');
+CREATE POLICY "Fotos publicas delete" ON storage.objects FOR DELETE USING (bucket_id = 'product-images');

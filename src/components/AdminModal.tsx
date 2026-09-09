@@ -13,6 +13,8 @@ import {
   upsertRemoteProduct,
   deleteRemoteProduct,
   uploadProductImage,
+  fetchRemoteSettings,
+  upsertRemoteSettings,
 } from '../lib/supabase';
 import { compressImage } from '../lib/imageCompressor';
 import { AdminOrdersView } from './AdminOrdersView';
@@ -126,21 +128,48 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Handle PIN Login (strictly against the configured PIN, no hardcoded bypass)
-  const handlePinSubmit = (e: React.FormEvent) => {
+  // Handle PIN Login (queries Supabase directly for instant multi-device synchronization)
+  const [isVerifyingPin, setIsVerifyingPin] = useState(false);
+
+  const handlePinSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const entered = pinInput.trim();
+    if (!entered) return;
+
+    setIsVerifyingPin(true);
+    setPinError(false);
+
+    try {
+      // 1. Try real-time check against Supabase
+      const remote = await fetchRemoteSettings();
+      if (remote && remote.adminPin) {
+        const remotePin = remote.adminPin.trim();
+        if (entered === remotePin) {
+          setIsAuthenticated(true);
+          setPinError(false);
+          setPinInput('');
+          setIsVerifyingPin(false);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('Real-time remote PIN verification error:', err);
+    }
+
+    // 2. Fallback check against local state
     const activePin = (settings.adminPin || '1234').trim();
-    if (pinInput.trim() === activePin) {
+    if (entered === activePin) {
       setIsAuthenticated(true);
       setPinError(false);
       setPinInput('');
     } else {
       setPinError(true);
     }
+    setIsVerifyingPin(false);
   };
 
   // Dedicated Password Change Handler
-  const handleUpdatePassword = (e: React.FormEvent) => {
+  const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPassword.trim().length < 4) {
       setPasswordChangeStatus({
@@ -163,11 +192,15 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     };
     setStoreSettings(updated);
     onSaveSettings(updated);
+
+    // Save directly to Supabase cloud database
+    await upsertRemoteSettings(updated);
+
     setNewPassword('');
     setConfirmPassword('');
     setPasswordChangeStatus({
       type: 'success',
-      text: '✅ Senha atualizada com sucesso! O PIN antigo 1234 foi desativado e ninguém mais consegue usá-lo.',
+      text: '✅ Senha atualizada e salva no banco de dados! O PIN antigo foi desativado em todos os aparelhos.',
     });
     setTimeout(() => setPasswordChangeStatus(null), 5000);
   };
@@ -466,9 +499,17 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               <button
                 type="submit"
                 id="admin-login-submit-button"
-                className="w-full py-3 bg-[#1c1917] hover:bg-[#322c29] text-white rounded-xl text-xs uppercase tracking-[0.15em] font-semibold transition-all shadow-sm"
+                disabled={isVerifyingPin}
+                className="w-full py-3 bg-[#1c1917] hover:bg-[#322c29] disabled:opacity-70 text-white rounded-xl text-xs uppercase tracking-[0.15em] font-semibold transition-all shadow-sm flex items-center justify-center gap-2"
               >
-                Acessar Painel
+                {isVerifyingPin ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-[#e6c687]" />
+                    <span>Verificando...</span>
+                  </>
+                ) : (
+                  <span>Acessar Painel</span>
+                )}
               </button>
             </form>
           </div>

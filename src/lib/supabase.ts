@@ -210,7 +210,7 @@ export async function fetchRemoteSettings(): Promise<Partial<StoreSettings> | nu
   if (!sb) return null;
 
   try {
-    const { data, error } = await sb.from('store_settings').select('*').eq('id', 'default').single();
+    const { data, error } = await sb.from('store_settings').select('*').eq('id', 'default').maybeSingle();
     if (error || !data) return null;
     return {
       whatsapp: data.whatsapp,

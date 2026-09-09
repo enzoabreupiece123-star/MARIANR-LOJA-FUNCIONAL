@@ -143,7 +143,11 @@ export default function App() {
           setCategories(remoteCats);
         }
         if (remoteSets) {
-          setSettings((prev) => ({ ...prev, ...remoteSets }));
+          setSettings((prev) => {
+            const updated = { ...prev, ...remoteSets };
+            localStorage.setItem('mariane_settings', JSON.stringify(updated));
+            return updated;
+          });
         }
         if (remoteOrders !== null) {
           setOrders(remoteOrders);
@@ -261,6 +265,7 @@ export default function App() {
   // Admin Settings Operations
   const handleSaveSettings = async (newSettings: StoreSettings) => {
     setSettings(newSettings);
+    localStorage.setItem('mariane_settings', JSON.stringify(newSettings));
     if (isSupabaseConnected) {
       await upsertRemoteSettings(newSettings);
     }

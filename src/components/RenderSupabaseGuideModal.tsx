@@ -13,8 +13,29 @@ export const RenderSupabaseGuideModal: React.FC<RenderSupabaseGuideModalProps> =
 
   if (!isOpen) return null;
 
-  const sqlCode = `-- 1. TABELA DE PRODUTOS
-CREATE TABLE IF NOT EXISTS public.products (
+  const sqlCode = `-- 0. EXCLUIR TABELAS ANTIGAS PARA REINICIAR 100% LIMPO
+DROP TABLE IF EXISTS public.orders CASCADE;
+DROP TABLE IF EXISTS public.products CASCADE;
+DROP TABLE IF EXISTS public.categories CASCADE;
+DROP TABLE IF EXISTS public.store_settings CASCADE;
+
+-- 1. TABELA DE CONFIGURAÇÕES (SENHA ADMIN, PIX, WHATSAPP)
+CREATE TABLE public.store_settings (
+    id TEXT PRIMARY KEY DEFAULT 'default',
+    whatsapp TEXT DEFAULT '5511999999999',
+    pix_key TEXT DEFAULT 'contato@marianemoreira.com.br',
+    pix_key_type TEXT DEFAULT 'email',
+    pix_beneficiary TEXT DEFAULT 'Mariane Moreira Concepts',
+    pix_city TEXT DEFAULT 'São Paulo',
+    instagram TEXT DEFAULT '@marianemoreiraconcepts',
+    admin_pin TEXT DEFAULT '1234',
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+INSERT INTO public.store_settings (id, admin_pin) VALUES ('default', '1234') ON CONFLICT (id) DO NOTHING;
+
+-- 2. TABELA DE PRODUTOS / ROUPAS
+CREATE TABLE public.products (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     category TEXT NOT NULL,
@@ -33,11 +54,28 @@ CREATE TABLE IF NOT EXISTS public.products (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Garantir coluna stock_quantity caso a tabela já existisse
-ALTER TABLE public.products ADD COLUMN IF NOT EXISTS stock_quantity INTEGER DEFAULT 5;
+-- 3. TABELA DE CATEGORIAS
+CREATE TABLE public.categories (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
 
--- 2. TABELA DE PEDIDOS
-CREATE TABLE IF NOT EXISTS public.orders (
+INSERT INTO public.categories (id, name, slug, description)
+VALUES 
+  ('cat-1', 'Vestidos', 'vestidos', 'Modelos sofisticados'),
+  ('cat-2', 'Conjuntos', 'conjuntos', 'Combinações elegantes'),
+  ('cat-3', 'Alfaiataria', 'alfaiataria', 'Cortes precisos'),
+  ('cat-4', 'Blusas', 'blusas', 'Camisas de seda e regatas'),
+  ('cat-5', 'Calças', 'calcas', 'Alfaiataria clássica'),
+  ('cat-6', 'Saias', 'saias', 'Saias mídi e evasê'),
+  ('cat-7', 'Acessórios', 'acessorios', 'Complementos de estilo')
+ON CONFLICT (id) DO NOTHING;
+
+-- 4. TABELA DE PEDIDOS
+CREATE TABLE public.orders (
     id TEXT PRIMARY KEY,
     customer_name TEXT NOT NULL,
     customer_phone TEXT NOT NULL,
@@ -59,17 +97,28 @@ CREATE TABLE IF NOT EXISTS public.orders (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 3. HABILITAR RLS E PERMISSÕES PÚBLICAS
+-- 5. HABILITAR RLS E PERMISSÕES PÚBLICAS
+ALTER TABLE public.store_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Permitir leitura pública produtos" ON public.products FOR SELECT USING (true);
-CREATE POLICY "Permitir alterações produtos" ON public.products FOR ALL USING (true) WITH CHECK (true);
-
+ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Permitir leitura pedidos" ON public.orders FOR SELECT USING (true);
-CREATE POLICY "Permitir gravação pedidos" ON public.orders FOR ALL USING (true) WITH CHECK (true);
 
--- 4. BUCKET DE FOTOS DO DISPOSITIVO (SUPABASE STORAGE)
-INSERT INTO storage.buckets (id, name, public) VALUES ('product-images', 'product-images', true) ON CONFLICT (id) DO NOTHING;
+GRANT ALL ON TABLE public.store_settings TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.products TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.categories TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.orders TO anon, authenticated, service_role;
+
+CREATE POLICY "Acesso total configuracoes" ON public.store_settings FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Acesso total produtos" ON public.products FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Acesso total categorias" ON public.categories FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Acesso total pedidos" ON public.orders FOR ALL USING (true) WITH CHECK (true);
+
+-- 6. BUCKET DE FOTOS DO DISPOSITIVO (SUPABASE STORAGE)
+INSERT INTO storage.buckets (id, name, public) VALUES ('product-images', 'product-images', true) ON CONFLICT (id) DO UPDATE SET public = true;
+DROP POLICY IF EXISTS "Fotos públicas" ON storage.objects;
+DROP POLICY IF EXISTS "Upload de fotos" ON storage.objects;
+DROP POLICY IF EXISTS "Atualizar fotos" ON storage.objects;
+DROP POLICY IF EXISTS "Excluir fotos" ON storage.objects;
 CREATE POLICY "Fotos públicas" ON storage.objects FOR SELECT USING (bucket_id = 'product-images');
 CREATE POLICY "Upload de fotos" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'product-images');
 CREATE POLICY "Atualizar fotos" ON storage.objects FOR UPDATE USING (bucket_id = 'product-images');
