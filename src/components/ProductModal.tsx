@@ -315,7 +315,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                     type="button"
                     id="add-to-cart-modal-button"
                     onClick={handleAdd}
-                    className={`w-full py-3.5 px-6 rounded-xl text-xs uppercase tracking-[0.15em] font-semibold transition-all flex items-center justify-center gap-2 shadow-md ${
+                    className={`w-full py-4 px-6 rounded-xl text-xs uppercase tracking-[0.15em] font-semibold transition-all flex items-center justify-center gap-2 shadow-md ${
                       addedAnimation
                         ? 'bg-emerald-700 text-white'
                         : 'bg-[#1c1917] text-white hover:bg-[#322c29]'
@@ -323,7 +323,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                   >
                     {addedAnimation ? (
                       <>
-                        <Check className="w-4 h-4" />
+                        <Check className="w-4 h-4 text-[#e6c687]" />
                         Adicionado à Sacola com Sucesso!
                       </>
                     ) : (
@@ -332,16 +332,6 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                         Adicionar à Sacola de Compras
                       </>
                     )}
-                  </button>
-
-                  <button
-                    type="button"
-                    id="direct-whatsapp-modal-button"
-                    onClick={handleDirectWhatsApp}
-                    className="w-full py-3 px-6 rounded-xl border border-[#25D366]/60 text-[#1a8b42] hover:bg-[#25D366]/10 text-xs uppercase tracking-[0.15em] font-semibold transition-all flex items-center justify-center gap-2"
-                  >
-                    <MessageCircle className="w-4 h-4 text-[#25D366]" />
-                    Pedir Esta Peça Direto no WhatsApp
                   </button>
                 </>
               ) : (
