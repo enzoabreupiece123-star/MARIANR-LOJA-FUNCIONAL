@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Navbar } from './components/Navbar';
-import { HeroBanner } from './components/HeroBanner';
 import { ProductCard } from './components/ProductCard';
 import { ProductModal } from './components/ProductModal';
 import { CartDrawer } from './components/CartDrawer';
@@ -474,17 +473,8 @@ export default function App() {
         isSupabaseConnected={isSupabaseConnected}
       />
 
-      {/* Hero Banner with Editorial Aesthetic */}
-      <HeroBanner
-        onExploreClick={() => {
-          const el = document.getElementById('catalog-section');
-          el?.scrollIntoView({ behavior: 'smooth' });
-        }}
-        whatsappNumber={settings.whatsapp}
-      />
-
       {/* Catalog Main Section */}
-      <main id="catalog-section" className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-16">
+      <main id="catalog-section" className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
         {/* Controls Bar: Category Title, Counter, and Sort */}
         <div className="flex flex-col md:flex-row md:items-end justify-between pb-8 border-b border-[#e8dfd2] gap-4">
           <div>
@@ -558,21 +548,33 @@ export default function App() {
               <ShoppingBag className="w-8 h-8 opacity-60" />
             </div>
             <h3 className="font-serif text-xl font-medium text-[#1c1917]">
-              Nenhuma peça encontrada
+              {products.length === 0 ? 'Catálogo pronto para suas peças' : 'Nenhuma peça encontrada'}
             </h3>
             <p className="text-xs text-[#786e64] leading-relaxed">
-              Não encontramos nenhum item para os filtros selecionados. Tente buscar por outros termos ou limpe a busca.
+              {products.length === 0
+                ? 'Seu banco de dados foi conectado com sucesso. Abra o Painel Mariane para cadastrar suas primeiras roupas e fotos!'
+                : 'Não encontramos nenhum item para os filtros selecionados. Tente buscar por outros termos ou limpe a busca.'}
             </p>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedCategory('todas');
-                setSearchQuery('');
-              }}
-              className="px-5 py-2.5 bg-[#1c1917] text-white rounded-full text-xs font-semibold uppercase tracking-wider hover:bg-[#322c29] transition-all"
-            >
-              Ver Todas as Peças
-            </button>
+            {products.length === 0 ? (
+              <button
+                type="button"
+                onClick={() => setIsAdminOpen(true)}
+                className="px-5 py-2.5 bg-[#1c1917] text-white rounded-full text-xs font-semibold uppercase tracking-wider hover:bg-[#322c29] transition-all"
+              >
+                Abrir Painel e Cadastrar Peças
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCategory('todas');
+                  setSearchQuery('');
+                }}
+                className="px-5 py-2.5 bg-[#1c1917] text-white rounded-full text-xs font-semibold uppercase tracking-wider hover:bg-[#322c29] transition-all"
+              >
+                Ver Todas as Peças
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6 sm:gap-8 pt-8">

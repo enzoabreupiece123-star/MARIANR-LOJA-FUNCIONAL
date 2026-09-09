@@ -126,10 +126,10 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
 
-  if (!isOpen) return null;
-
-  // Handle PIN Login (queries Supabase directly for instant multi-device synchronization)
+  // Handle PIN Login state (queries Supabase directly for instant multi-device synchronization)
   const [isVerifyingPin, setIsVerifyingPin] = useState(false);
+
+  if (!isOpen) return null;
 
   const handlePinSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
