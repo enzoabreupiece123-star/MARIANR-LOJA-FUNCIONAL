@@ -14,7 +14,8 @@ export function cleanPhone(phone: string): string {
 export function generateWhatsAppOrderUrl(
   items: CartItem[],
   customer: CustomerOrderData,
-  settings: StoreSettings
+  settings: StoreSettings,
+  orderId?: string
 ): string {
   const total = items.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
   const dateStr = new Date().toLocaleDateString('pt-BR', {
@@ -25,7 +26,11 @@ export function generateWhatsAppOrderUrl(
     minute: '2-digit',
   });
 
-  let message = `*Olá, Mariane! Gostaria de fazer um pedido na Mariane Moreira Concepts:*\n\n`;
+  const orderBadge = orderId ? ` #${orderId}` : '';
+  let message = `*Olá, Mariane! Gostaria de confirmar meu Pedido${orderBadge} na Mariane Moreira Concepts:*\n\n`;
+  if (orderId) {
+    message += `🔖 *Código do Pedido:* *#${orderId}*\n`;
+  }
   message += `🗓️ *Data:* ${dateStr}\n`;
   message += `👤 *Cliente:* ${customer.name.trim()}\n`;
   message += `📱 *Telefone:* ${customer.phone.trim()}\n\n`;

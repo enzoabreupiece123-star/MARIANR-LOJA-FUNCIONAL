@@ -38,7 +38,12 @@ export const ProductModal: React.FC<ProductModalProps> = ({
     ? product.images
     : ['https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=1000&q=80'];
 
+  const isOutOfStock = !product.in_stock || (product.stock_quantity !== undefined && product.stock_quantity <= 0);
+  const stockQty = product.stock_quantity !== undefined ? product.stock_quantity : 5;
+  const maxAvailableQty = Math.max(1, stockQty);
+
   const handleAdd = () => {
+    if (isOutOfStock) return;
     onAddToCart(product, selectedSize || 'Único', selectedColor, quantity);
     setAddedAnimation(true);
     setTimeout(() => {
@@ -48,14 +53,20 @@ export const ProductModal: React.FC<ProductModalProps> = ({
 
   const handleDirectWhatsApp = () => {
     const cleanWa = cleanPhone(settings.whatsapp);
-    const text = `*Olá Mariane! Tenho interesse na peça da sua loja:*\n\n` +
-      `👗 *${product.name}*\n` +
-      `📏 Tamanho: *${selectedSize}*\n` +
-      (selectedColor ? `🎨 Cor: *${selectedColor}*\n` : '') +
-      `🔢 Quantidade: *${quantity}*\n` +
-      `💰 Valor: *${formatCurrency(product.price * quantity)}*\n` +
-      `💳 Forma de pagamento: *PIX*\n\n` +
-      `Ainda está disponível para envio ou retirada?`;
+    const text = isOutOfStock
+      ? `*Olá Mariane! Gostaria de saber quando a peça volta ao estoque ou se faz sob encomenda:*\n\n` +
+        `👗 *${product.name}*\n` +
+        `📏 Tamanho: *${selectedSize}*\n` +
+        (selectedColor ? `🎨 Cor: *${selectedColor}*\n` : '') +
+        `Obrigada!`
+      : `*Olá Mariane! Tenho interesse na peça da sua loja:*\n\n` +
+        `👗 *${product.name}*\n` +
+        `📏 Tamanho: *${selectedSize}*\n` +
+        (selectedColor ? `🎨 Cor: *${selectedColor}*\n` : '') +
+        `🔢 Quantidade: *${quantity}*\n` +
+        `💰 Valor: *${formatCurrency(product.price * quantity)}*\n` +
+        `💳 Forma de pagamento: *PIX*\n\n` +
+        `Ainda está disponível para envio ou retirada?`;
 
     window.open(`https://wa.me/${cleanWa}?text=${encodeURIComponent(text)}`, '_blank');
   };
@@ -225,29 +236,56 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                 </div>
               )}
 
-              {/* Quantity Stepper */}
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-semibold uppercase tracking-wider text-[#1c1917]">
-                  Quantidade:
-                </span>
-                <div className="inline-flex items-center rounded-lg border border-[#d5cbbe] bg-white">
-                  <button
-                    type="button"
-                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                    className="w-9 h-9 flex items-center justify-center text-sm font-bold text-[#5c544c] hover:bg-[#f5efe6] rounded-l-lg"
-                  >
-                    -
-                  </button>
-                  <span className="w-9 text-center text-xs font-bold text-[#1c1917]">
-                    {quantity}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setQuantity(quantity + 1)}
-                    className="w-9 h-9 flex items-center justify-center text-sm font-bold text-[#5c544c] hover:bg-[#f5efe6] rounded-r-lg"
-                  >
-                    +
-                  </button>
+              {/* Quantity Stepper & Stock Availability */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-[#1c1917]">
+                      Quantidade:
+                    </span>
+                    {!isOutOfStock ? (
+                      <div className="inline-flex items-center rounded-lg border border-[#d5cbbe] bg-white">
+                        <button
+                          type="button"
+                          onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                          className="w-9 h-9 flex items-center justify-center text-sm font-bold text-[#5c544c] hover:bg-[#f5efe6] rounded-l-lg disabled:opacity-30"
+                          disabled={quantity <= 1}
+                        >
+                          -
+                        </button>
+                        <span className="w-9 text-center text-xs font-bold text-[#1c1917]">
+                          {quantity}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setQuantity(Math.min(maxAvailableQty, quantity + 1))}
+                          className="w-9 h-9 flex items-center justify-center text-sm font-bold text-[#5c544c] hover:bg-[#f5efe6] rounded-r-lg disabled:opacity-30"
+                          disabled={quantity >= maxAvailableQty}
+                        >
+                          +
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-stone-500 italic">0 un.</span>
+                    )}
+                  </div>
+
+                  {/* Stock notice badge */}
+                  <div>
+                    {isOutOfStock ? (
+                      <span className="inline-flex items-center text-[10px] font-bold uppercase tracking-wider bg-rose-100 text-rose-800 px-2 py-1 rounded">
+                        Esgotado
+                      </span>
+                    ) : stockQty <= 3 ? (
+                      <span className="inline-flex items-center text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-900 px-2 py-1 rounded">
+                        Últimas {stockQty} peças!
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center text-[10px] font-medium bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded">
+                        Disponível em estoque ({stockQty} un.)
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -271,7 +309,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
 
             {/* Actions Section */}
             <div className="space-y-2.5 pt-4 border-t border-[#f0ebe3]">
-              {product.in_stock ? (
+              {!isOutOfStock ? (
                 <>
                   <button
                     type="button"
@@ -307,8 +345,20 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                   </button>
                 </>
               ) : (
-                <div className="p-3.5 bg-stone-100 rounded-xl text-center text-xs text-stone-600 font-medium">
-                  Peça temporariamente esgotada no ateliê. Entre em contato pelo WhatsApp para consultar encomendas futuras!
+                <div className="space-y-2">
+                  <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-center text-xs text-rose-800 font-medium">
+                    Peça temporariamente indisponível no estoque. Você pode consultar previsão de reposição ou pedir encomenda com a Mariane no WhatsApp abaixo:
+                  </div>
+
+                  <button
+                    type="button"
+                    id="direct-whatsapp-modal-button"
+                    onClick={handleDirectWhatsApp}
+                    className="w-full py-3 px-6 rounded-xl bg-[#25D366] hover:bg-[#20ba59] text-white text-xs uppercase tracking-[0.15em] font-semibold transition-all flex items-center justify-center gap-2 shadow"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    Consultar Reposição / Encomenda no WhatsApp
+                  </button>
                 </div>
               )}
 

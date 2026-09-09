@@ -9,6 +9,7 @@ export interface Product {
   details?: string[];
   sizes: string[];
   colors: string[];
+  stock_quantity?: number;
   in_stock: boolean;
   is_new?: boolean;
   is_featured?: boolean;
@@ -44,6 +45,40 @@ export interface CustomerOrderData {
   city?: string;
   state?: string;
   notes?: string;
+}
+
+export type OrderStatus = 'pending' | 'confirmed' | 'dispatched' | 'cancelled';
+
+export interface OrderItem {
+  productId: string;
+  productName: string;
+  productImage: string;
+  size: string;
+  color: string;
+  price: number;
+  quantity: number;
+}
+
+export interface Order {
+  id: string;
+  customerName: string;
+  customerPhone: string;
+  deliveryType: DeliveryType;
+  cep?: string;
+  street?: string;
+  number?: string;
+  complement?: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
+  notes?: string;
+  items: OrderItem[];
+  subtotal: number;
+  total: number;
+  paymentMethod: 'pix' | 'whatsapp';
+  status: OrderStatus;
+  stockDeducted?: boolean;
+  createdAt: string;
 }
 
 export interface StoreSettings {

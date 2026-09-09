@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { X, Trash2, ShoppingBag, Send, Copy, Check, Sparkles, MapPin, Store, AlertCircle } from 'lucide-react';
+import { X, Trash2, ShoppingBag, Send, Copy, Check, Sparkles, MapPin, Store, AlertCircle, Search, Loader2 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { CartItem, CustomerOrderData, DeliveryType, StoreSettings } from '../types';
+import { CartItem, CustomerOrderData, DeliveryType, StoreSettings, Order } from '../types';
 import { formatCurrency, generateWhatsAppOrderUrl, copyToClipboard } from '../lib/utils';
 
 interface CartDrawerProps {
@@ -11,6 +11,7 @@ interface CartDrawerProps {
   onUpdateQuantity: (cartItemId: string, newQuantity: number) => void;
   onRemoveItem: (cartItemId: string) => void;
   onClearCart: () => void;
+  onCreateOrder: (order: Order) => void;
   settings: StoreSettings;
 }
 
@@ -21,12 +22,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   onUpdateQuantity,
   onRemoveItem,
   onClearCart,
+  onCreateOrder,
   settings,
 }) => {
   const [customer, setCustomer] = useState<CustomerOrderData>({
     name: '',
     phone: '',
-    deliveryType: 'pickup',
+    deliveryType: 'delivery', // default to delivery so address is emphasized
     cep: '',
     street: '',
     number: '',
@@ -39,6 +41,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
   const [copiedPix, setCopiedPix] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [isSearchingCep, setIsSearchingCep] = useState(false);
+  const [cepNotice, setCepNotice] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -49,6 +53,36 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     if (success) {
       setCopiedPix(true);
       setTimeout(() => setCopiedPix(false), 2500);
+    }
+  };
+
+  const handleCepSearch = async (rawCep: string) => {
+    const cleanCep = rawCep.replace(/\D/g, '');
+    if (cleanCep.length !== 8) return;
+
+    setIsSearchingCep(true);
+    setCepNotice(null);
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
+      const data = await res.json();
+      if (data.erro) {
+        setCepNotice('CEP não encontrado. Preencha o endereço manualmente.');
+      } else {
+        setCustomer((prev) => ({
+          ...prev,
+          street: data.logradouro || prev.street,
+          neighborhood: data.bairro || prev.neighborhood,
+          city: data.localidade || prev.city,
+          state: data.uf || prev.state,
+          complement: data.complemento || prev.complement,
+        }));
+        setCepNotice('✅ Endereço preenchido automaticamente pelo CEP!');
+        setTimeout(() => setCepNotice(null), 3500);
+      }
+    } catch {
+      setCepNotice('Não foi possível consultar o CEP agora. Preencha manualmente.');
+    } finally {
+      setIsSearchingCep(false);
     }
   };
 
@@ -67,11 +101,61 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     }
 
     if (customer.deliveryType === 'delivery') {
-      if (!customer.street?.trim() || !customer.city?.trim()) {
-        setFormError('Por favor, preencha o seu endereço completo para entrega.');
+      if (!customer.street?.trim()) {
+        setFormError('Por favor, informe a Rua / Avenida do endereço de entrega.');
+        return;
+      }
+      if (!customer.number?.trim()) {
+        setFormError('Por favor, informe o Número da residência (ou S/N).');
+        return;
+      }
+      if (!customer.neighborhood?.trim()) {
+        setFormError('Por favor, informe o Bairro de entrega.');
+        return;
+      }
+      if (!customer.city?.trim()) {
+        setFormError('Por favor, informe a Cidade de entrega.');
         return;
       }
     }
+
+    // Generate unique order ID
+    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const orderId = `MM-${Date.now().toString().slice(-4)}${randomSuffix}`;
+
+    // Build Order object
+    const newOrder: Order = {
+      id: orderId,
+      customerName: customer.name.trim(),
+      customerPhone: customer.phone.trim(),
+      deliveryType: customer.deliveryType,
+      cep: customer.cep?.trim() || '',
+      street: customer.street?.trim() || '',
+      number: customer.number?.trim() || '',
+      complement: customer.complement?.trim() || '',
+      neighborhood: customer.neighborhood?.trim() || '',
+      city: customer.city?.trim() || '',
+      state: customer.state?.trim() || '',
+      notes: customer.notes?.trim() || '',
+      items: items.map((item) => ({
+        productId: item.product.id,
+        productName: item.product.name,
+        productImage: item.product.images?.[0] || '',
+        size: item.selectedSize,
+        color: item.selectedColor,
+        price: item.product.price,
+        quantity: item.quantity,
+      })),
+      subtotal,
+      total: subtotal,
+      paymentMethod: 'pix',
+      status: 'pending',
+      stockDeducted: false,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Save order in store state / Supabase
+    onCreateOrder(newOrder);
 
     // Trigger celebration confetti!
     try {
@@ -79,17 +163,21 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         particleCount: 80,
         spread: 70,
         origin: { y: 0.6 },
-        colors: ['#c5a059', '#1c1917', '#e8decd', '#ffffff']
+        colors: ['#c5a059', '#1c1917', '#e8decd', '#ffffff'],
       });
     } catch {
       // safe fallback
     }
 
-    // Generate WhatsApp URL
-    const whatsappUrl = generateWhatsAppOrderUrl(items, customer, settings);
+    // Generate WhatsApp URL with order ID
+    const whatsappUrl = generateWhatsAppOrderUrl(items, customer, settings, orderId);
 
     // Open WhatsApp
     window.open(whatsappUrl, '_blank');
+
+    // Clear cart so client has a clean state
+    onClearCart();
+    onClose();
   };
 
   return (
@@ -317,62 +405,128 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
                   {/* Address fields if delivery */}
                   {customer.deliveryType === 'delivery' && (
-                    <div className="pt-2 border-t border-[#f0ebe3] space-y-2">
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="col-span-2">
-                          <label className="block text-[10px] font-semibold text-[#5c544c] mb-0.5">Rua / Av. *</label>
+                    <div className="pt-3 border-t border-[#f0ebe3] space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-[#1c1917] uppercase tracking-wider flex items-center gap-1">
+                          <MapPin className="w-3.5 h-3.5 text-[#8e6e34]" />
+                          Endereço para Entrega
+                        </span>
+                        <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                          Obrigatório
+                        </span>
+                      </div>
+
+                      {/* CEP with auto-fill */}
+                      <div>
+                        <label className="block text-[10px] font-semibold text-[#5c544c] mb-0.5">
+                          CEP (busca automática de rua e bairro)
+                        </label>
+                        <div className="relative flex gap-1.5">
                           <input
                             type="text"
-                            placeholder="Rua das Acácias"
+                            maxLength={9}
+                            placeholder="Ex: 01310-100"
+                            value={customer.cep || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setCustomer({ ...customer, cep: val });
+                              if (val.replace(/\D/g, '').length === 8) {
+                                handleCepSearch(val);
+                              }
+                            }}
+                            className="w-full text-xs p-2 bg-[#faf8f5] border border-[#d5cbbe] rounded-lg focus:bg-white focus:border-[#8e6e34] focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => customer.cep && handleCepSearch(customer.cep)}
+                            disabled={isSearchingCep}
+                            className="px-3 py-2 bg-[#1c1917] text-white text-xs font-medium rounded-lg hover:bg-[#332e29] transition-colors shrink-0 flex items-center gap-1 disabled:opacity-50"
+                            title="Buscar CEP"
+                          >
+                            {isSearchingCep ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Search className="w-3.5 h-3.5" />
+                            )}
+                            <span className="hidden sm:inline">Buscar</span>
+                          </button>
+                        </div>
+                        {cepNotice && (
+                          <p className="text-[10px] text-[#8e6e34] font-medium mt-1">{cepNotice}</p>
+                        )}
+                      </div>
+
+                      {/* Rua e Número */}
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="col-span-2">
+                          <label className="block text-[10px] font-semibold text-[#5c544c] mb-0.5">Rua / Avenida *</label>
+                          <input
+                            type="text"
+                            placeholder="Ex: Av. Paulista"
                             value={customer.street || ''}
                             onChange={(e) => setCustomer({ ...customer, street: e.target.value })}
-                            className="w-full text-xs p-2 bg-[#faf8f5] border border-[#d5cbbe] rounded-lg focus:outline-none"
+                            className="w-full text-xs p-2 bg-[#faf8f5] border border-[#d5cbbe] rounded-lg focus:bg-white focus:border-[#8e6e34] focus:outline-none"
                           />
                         </div>
                         <div>
-                          <label className="block text-[10px] font-semibold text-[#5c544c] mb-0.5">Nº *</label>
+                          <label className="block text-[10px] font-semibold text-[#5c544c] mb-0.5">Número *</label>
                           <input
                             type="text"
-                            placeholder="120"
+                            placeholder="Ex: 1578"
                             value={customer.number || ''}
                             onChange={(e) => setCustomer({ ...customer, number: e.target.value })}
-                            className="w-full text-xs p-2 bg-[#faf8f5] border border-[#d5cbbe] rounded-lg focus:outline-none"
+                            className="w-full text-xs p-2 bg-[#faf8f5] border border-[#d5cbbe] rounded-lg focus:bg-white focus:border-[#8e6e34] focus:outline-none"
                           />
                         </div>
                       </div>
 
+                      {/* Complemento e Bairro */}
                       <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-semibold text-[#5c544c] mb-0.5">Complemento</label>
+                          <input
+                            type="text"
+                            placeholder="Apto 42, Bloco B..."
+                            value={customer.complement || ''}
+                            onChange={(e) => setCustomer({ ...customer, complement: e.target.value })}
+                            className="w-full text-xs p-2 bg-[#faf8f5] border border-[#d5cbbe] rounded-lg focus:bg-white focus:border-[#8e6e34] focus:outline-none"
+                          />
+                        </div>
                         <div>
                           <label className="block text-[10px] font-semibold text-[#5c544c] mb-0.5">Bairro *</label>
                           <input
                             type="text"
-                            placeholder="Jardins"
+                            placeholder="Ex: Bela Vista"
                             value={customer.neighborhood || ''}
                             onChange={(e) => setCustomer({ ...customer, neighborhood: e.target.value })}
-                            className="w-full text-xs p-2 bg-[#faf8f5] border border-[#d5cbbe] rounded-lg focus:outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-semibold text-[#5c544c] mb-0.5">Cidade / UF *</label>
-                          <input
-                            type="text"
-                            placeholder="São Paulo - SP"
-                            value={customer.city || ''}
-                            onChange={(e) => setCustomer({ ...customer, city: e.target.value })}
-                            className="w-full text-xs p-2 bg-[#faf8f5] border border-[#d5cbbe] rounded-lg focus:outline-none"
+                            className="w-full text-xs p-2 bg-[#faf8f5] border border-[#d5cbbe] rounded-lg focus:bg-white focus:border-[#8e6e34] focus:outline-none"
                           />
                         </div>
                       </div>
 
-                      <div>
-                        <label className="block text-[10px] font-semibold text-[#5c544c] mb-0.5">CEP</label>
-                        <input
-                          type="text"
-                          placeholder="01234-567"
-                          value={customer.cep || ''}
-                          onChange={(e) => setCustomer({ ...customer, cep: e.target.value })}
-                          className="w-full text-xs p-2 bg-[#faf8f5] border border-[#d5cbbe] rounded-lg focus:outline-none"
-                        />
+                      {/* Cidade e Estado */}
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="col-span-2">
+                          <label className="block text-[10px] font-semibold text-[#5c544c] mb-0.5">Cidade *</label>
+                          <input
+                            type="text"
+                            placeholder="Ex: São Paulo"
+                            value={customer.city || ''}
+                            onChange={(e) => setCustomer({ ...customer, city: e.target.value })}
+                            className="w-full text-xs p-2 bg-[#faf8f5] border border-[#d5cbbe] rounded-lg focus:bg-white focus:border-[#8e6e34] focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-[#5c544c] mb-0.5">UF (Estado) *</label>
+                          <input
+                            type="text"
+                            maxLength={2}
+                            placeholder="SP"
+                            value={customer.state || ''}
+                            onChange={(e) => setCustomer({ ...customer, state: e.target.value.toUpperCase() })}
+                            className="w-full text-xs p-2 bg-[#faf8f5] border border-[#d5cbbe] rounded-lg uppercase focus:bg-white focus:border-[#8e6e34] focus:outline-none"
+                          />
+                        </div>
                       </div>
                     </div>
                   )}

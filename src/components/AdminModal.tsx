@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   X, Plus, Trash2, Edit3, ShieldCheck, Database, Key, Sparkles, Check,
   AlertCircle, Image as ImageIcon, Save, ArrowLeft, RefreshCw, HelpCircle, Eye,
-  EyeOff, Lock, AlertTriangle, Camera, UploadCloud, Loader2, Star, Link as LinkIcon
+  EyeOff, Lock, AlertTriangle, Camera, UploadCloud, Loader2, Star, Link as LinkIcon,
+  Package, ShoppingBag
 } from 'lucide-react';
-import { Product, Category, StoreSettings } from '../types';
+import { Product, Category, StoreSettings, Order, OrderStatus } from '../types';
 import { formatCurrency } from '../lib/utils';
 import {
   testSupabaseConnection,
@@ -14,6 +15,7 @@ import {
   uploadProductImage,
 } from '../lib/supabase';
 import { compressImage } from '../lib/imageCompressor';
+import { AdminOrdersView } from './AdminOrdersView';
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -21,11 +23,16 @@ interface AdminModalProps {
   products: Product[];
   categories: Category[];
   settings: StoreSettings;
+  orders: Order[];
   onSaveProduct: (product: Product) => void;
   onDeleteProduct: (productId: string) => void;
   onSaveCategory: (category: Category) => void;
   onDeleteCategory: (categoryId: string) => void;
   onSaveSettings: (newSettings: StoreSettings) => void;
+  onConfirmOrder: (orderId: string) => void;
+  onUpdateOrderStatus: (orderId: string, status: OrderStatus, restoreStock?: boolean) => void;
+  onDeleteOrder: (orderId: string) => void;
+  onQuickAdjustStock: (productId: string, delta: number) => void;
   onOpenGuide: () => void;
   isSupabaseConnected: boolean;
   onRefreshData: () => void;
@@ -48,11 +55,16 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   products,
   categories,
   settings,
+  orders,
   onSaveProduct,
   onDeleteProduct,
   onSaveCategory,
   onDeleteCategory,
   onSaveSettings,
+  onConfirmOrder,
+  onUpdateOrderStatus,
+  onDeleteOrder,
+  onQuickAdjustStock,
   onOpenGuide,
   isSupabaseConnected,
   onRefreshData,
@@ -62,7 +74,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [pinError, setPinError] = useState(false);
 
   // Active Admin Tab
-  const [activeTab, setActiveTab] = useState<'products' | 'form' | 'categories' | 'settings' | 'supabase'>('products');
+  const [activeTab, setActiveTab] = useState<'orders' | 'products' | 'form' | 'categories' | 'settings' | 'supabase'>('orders');
 
   // Product Form State
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
@@ -70,6 +82,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [formCategory, setFormCategory] = useState(categories[0]?.name || 'Vestidos');
   const [formPrice, setFormPrice] = useState('');
   const [formOriginalPrice, setFormOriginalPrice] = useState('');
+  const [formStockQuantity, setFormStockQuantity] = useState<number>(5);
   const [formImages, setFormImages] = useState<string[]>([]);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [uploadProgressMsg, setUploadProgressMsg] = useState<string | null>(null);
@@ -222,6 +235,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     setFormCategory(categories[0]?.name || 'Vestidos');
     setFormPrice('');
     setFormOriginalPrice('');
+    setFormStockQuantity(5);
     setFormImages(['https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=1000&q=80']);
     setFormDescription('Peça exclusiva com caimento fluido e acabamento sofisticado em alfaiataria autoral.');
     setFormDetailsText('Puro linho com toque suave\nForro interno 100% algodão\nFechamento com zíper invisível');
@@ -240,6 +254,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     setFormCategory(prod.category);
     setFormPrice(String(prod.price));
     setFormOriginalPrice(prod.original_price ? String(prod.original_price) : '');
+    setFormStockQuantity(prod.stock_quantity !== undefined ? prod.stock_quantity : (prod.in_stock ? 5 : 0));
     setFormImages(prod.images && prod.images.length > 0 ? prod.images : []);
     setFormDescription(prod.description);
     setFormDetailsText(prod.details ? prod.details.join('\n') : '');
@@ -277,18 +292,22 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
 
+    const stockNum = Math.max(0, parseInt(String(formStockQuantity), 10) || 0);
+    const inStockComputed = formInStock && stockNum > 0;
+
     const newProduct: Product = {
       id: editingProductId || `prod-${Date.now()}`,
       name: formName.trim(),
       category: formCategory,
       price: priceNum,
       original_price: origPriceNum,
+      stock_quantity: stockNum,
       images: formImages,
       description: formDescription.trim(),
       details,
       sizes: formSizes.length > 0 ? formSizes : ['Único'],
       colors,
-      in_stock: formInStock,
+      in_stock: inStockComputed,
       is_new: formIsNew,
       is_featured: formIsFeatured,
       created_at: new Date().toISOString(),
@@ -479,6 +498,24 @@ export const AdminModal: React.FC<AdminModalProps> = ({
             <div className="flex items-center gap-1 px-4 sm:px-6 bg-[#faf8f5] border-b border-[#e8dfd2] overflow-x-auto no-scrollbar">
               <button
                 type="button"
+                onClick={() => setActiveTab('orders')}
+                className={`py-3 px-3 sm:px-4 text-xs font-semibold uppercase tracking-wider transition-all border-b-2 whitespace-nowrap flex items-center gap-1.5 ${
+                  activeTab === 'orders'
+                    ? 'border-[#1c1917] text-[#1c1917]'
+                    : 'border-transparent text-[#786e64] hover:text-[#1c1917]'
+                }`}
+              >
+                <Package className="w-3.5 h-3.5 text-[#8e6e34]" />
+                Pedidos ({orders.length})
+                {orders.filter((o) => o.status === 'pending').length > 0 && (
+                  <span className="bg-amber-600 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full shadow-xs">
+                    {orders.filter((o) => o.status === 'pending').length} novos
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setActiveTab('products')}
                 className={`py-3 px-3 sm:px-4 text-xs font-semibold uppercase tracking-wider transition-all border-b-2 whitespace-nowrap ${
                   activeTab === 'products'
@@ -542,6 +579,18 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
             {/* Tab Panels */}
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-white">
+              {/* TAB 0: ORDERS MANAGEMENT */}
+              {activeTab === 'orders' && (
+                <AdminOrdersView
+                  orders={orders}
+                  products={products}
+                  onConfirmOrder={onConfirmOrder}
+                  onUpdateOrderStatus={onUpdateOrderStatus}
+                  onDeleteOrder={onDeleteOrder}
+                  onRefreshData={onRefreshData}
+                />
+              )}
+
               {/* TAB 1: PRODUCTS LIST */}
               {activeTab === 'products' && (
                 <div className="space-y-4">
@@ -551,7 +600,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         Roupas da Coleção
                       </h3>
                       <p className="text-xs text-[#786e64]">
-                        Gerencie preços, fotos, tamanhos e disponibilidade imediata.
+                        Gerencie preços, fotos, estoque e disponibilidade imediata.
                       </p>
                     </div>
 
@@ -577,70 +626,106 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   {/* Products Table */}
                   <div className="border border-[#e8dfd2] rounded-xl overflow-hidden shadow-sm">
                     <div className="divide-y divide-[#e8dfd2]">
-                      {products.map((prod) => (
-                        <div
-                          key={prod.id}
-                          className="p-3 sm:p-4 flex items-center justify-between gap-4 hover:bg-[#fcfaf7] transition-colors"
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <img
-                              src={prod.images[0] || 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=300&q=80'}
-                              alt={prod.name}
-                              className="w-12 h-16 object-cover rounded-lg bg-[#f0ebe1] shrink-0"
-                            />
-                            <div className="min-w-0">
-                              <span className="text-[10px] uppercase font-bold tracking-wider text-[#8e6e34]">
-                                {prod.category}
-                              </span>
-                              <h4 className="text-xs sm:text-sm font-semibold text-[#1c1917] truncate">
-                                {prod.name}
-                              </h4>
-                              <div className="flex items-center gap-2 mt-0.5">
-                                <span className="text-xs font-bold text-[#1c1917]">
-                                  {formatCurrency(prod.price)}
+                      {products.map((prod) => {
+                        const stock = prod.stock_quantity !== undefined ? prod.stock_quantity : (prod.in_stock ? 5 : 0);
+                        const isZeroStock = stock <= 0 || !prod.in_stock;
+                        const isLowStock = !isZeroStock && stock <= 3;
+
+                        return (
+                          <div
+                            key={prod.id}
+                            className="p-3 sm:p-4 flex items-center justify-between gap-4 hover:bg-[#fcfaf7] transition-colors"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <img
+                                src={prod.images[0] || 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=300&q=80'}
+                                alt={prod.name}
+                                className="w-12 h-16 object-cover rounded-lg bg-[#f0ebe1] shrink-0"
+                              />
+                              <div className="min-w-0">
+                                <span className="text-[10px] uppercase font-bold tracking-wider text-[#8e6e34]">
+                                  {prod.category}
                                 </span>
-                                {prod.original_price && (
-                                  <span className="text-[11px] text-[#9c9389] line-through">
-                                    {formatCurrency(prod.original_price)}
+                                <h4 className="text-xs sm:text-sm font-semibold text-[#1c1917] truncate">
+                                  {prod.name}
+                                </h4>
+                                <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                                  <span className="text-xs font-bold text-[#1c1917]">
+                                    {formatCurrency(prod.price)}
                                   </span>
-                                )}
-                                <span
-                                  className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                                    prod.in_stock
-                                      ? 'bg-emerald-100 text-emerald-800'
-                                      : 'bg-red-100 text-red-800'
-                                  }`}
-                                >
-                                  {prod.in_stock ? 'Em Estoque' : 'Esgotado'}
-                                </span>
+                                  {prod.original_price && (
+                                    <span className="text-[11px] text-[#9c9389] line-through">
+                                      {formatCurrency(prod.original_price)}
+                                    </span>
+                                  )}
+
+                                  {/* Stock Badge */}
+                                  {isZeroStock ? (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-800">
+                                      Esgotado (0 un.)
+                                    </span>
+                                  ) : isLowStock ? (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900">
+                                      Restam {stock} un.!
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                                      {stock} un. em estoque
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
 
-                          <div className="flex items-center gap-2 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => handleStartEditProduct(prod)}
-                              className="p-2 text-[#5c544c] hover:text-[#1c1917] hover:bg-[#f0ebe1] rounded-lg transition-colors border border-[#e8dfd2]"
-                              title="Editar Roupa"
-                            >
-                              <Edit3 className="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (confirm(`Deseja realmente excluir "${prod.name}" do catálogo?`)) {
-                                  onDeleteProduct(prod.id);
-                                }
-                              }}
-                              className="p-2 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-[#e8dfd2]"
-                              title="Excluir Roupa"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {/* Quick Stock +/- Stepper */}
+                              <div className="hidden sm:flex items-center rounded-lg border border-[#d5cbbe] bg-white p-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => onQuickAdjustStock(prod.id, -1)}
+                                  disabled={stock <= 0}
+                                  className="w-6 h-6 flex items-center justify-center text-xs font-bold text-[#5c544c] hover:bg-[#f5efe6] rounded transition-colors disabled:opacity-30"
+                                  title="Diminuir estoque (-1)"
+                                >
+                                  -
+                                </button>
+                                <span className="w-8 text-center text-xs font-bold text-[#1c1917]" title="Unidades em estoque">
+                                  {stock}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => onQuickAdjustStock(prod.id, 1)}
+                                  className="w-6 h-6 flex items-center justify-center text-xs font-bold text-[#5c544c] hover:bg-[#f5efe6] rounded transition-colors"
+                                  title="Aumentar estoque (+1)"
+                                >
+                                  +
+                                </button>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditProduct(prod)}
+                                className="p-2 text-[#5c544c] hover:text-[#1c1917] hover:bg-[#f0ebe1] rounded-lg transition-colors border border-[#e8dfd2]"
+                                title="Editar Roupa"
+                              >
+                                <Edit3 className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (confirm(`Deseja realmente excluir "${prod.name}" do catálogo?`)) {
+                                    onDeleteProduct(prod.id);
+                                  }
+                                }}
+                                className="p-2 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-[#e8dfd2]"
+                                title="Excluir Roupa"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -742,6 +827,63 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         onChange={(e) => setFormColorsText(e.target.value)}
                         className="w-full text-xs p-3 bg-[#faf8f5] border border-[#d5cbbe] rounded-xl focus:bg-white focus:border-[#8e6e34] focus:outline-none"
                       />
+                    </div>
+
+                    {/* Stock Quantity */}
+                    <div>
+                      <label className="block text-xs font-semibold text-[#5c544c] mb-1 flex items-center justify-between">
+                        <span>Estoque (Quantidade Disponível) *</span>
+                        <span className="text-[10px] text-[#8e6e34] font-bold">
+                          {formStockQuantity > 0 ? `${formStockQuantity} un.` : 'Sem Estoque'}
+                        </span>
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="0"
+                          required
+                          value={formStockQuantity}
+                          onChange={(e) => {
+                            const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                            setFormStockQuantity(val);
+                            if (val === 0) {
+                              setFormInStock(false);
+                            } else if (!formInStock) {
+                              setFormInStock(true);
+                            }
+                          }}
+                          className="w-full text-xs p-3 bg-[#faf8f5] border border-[#d5cbbe] rounded-xl focus:bg-white focus:border-[#8e6e34] focus:outline-none font-bold text-[#1c1917]"
+                        />
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const val = Math.max(0, formStockQuantity - 1);
+                              setFormStockQuantity(val);
+                              if (val === 0) setFormInStock(false);
+                            }}
+                            className="w-9 h-10 flex items-center justify-center bg-[#faf8f5] hover:bg-[#ede6dc] border border-[#d5cbbe] rounded-xl text-sm font-bold text-[#5c544c] transition-colors"
+                            title="Diminuir 1 peça"
+                          >
+                            -
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const val = formStockQuantity + 1;
+                              setFormStockQuantity(val);
+                              if (!formInStock) setFormInStock(true);
+                            }}
+                            className="w-9 h-10 flex items-center justify-center bg-[#faf8f5] hover:bg-[#ede6dc] border border-[#d5cbbe] rounded-xl text-sm font-bold text-[#5c544c] transition-colors"
+                            title="Aumentar 1 peça"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-[#8c8278]">
+                        Ao confirmar pedidos, essa quantidade diminui automaticamente. Se zerar, a roupa fica indisponível.
+                      </span>
                     </div>
 
                     {/* Sizes Selection */}

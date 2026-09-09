@@ -20,12 +20,16 @@ CREATE TABLE IF NOT EXISTS public.products (
     details TEXT[] DEFAULT '{}',
     sizes TEXT[] DEFAULT '{"P", "M", "G"}',
     colors TEXT[] DEFAULT '{}',
+    stock_quantity INTEGER DEFAULT 5,
     in_stock BOOLEAN DEFAULT true,
     is_new BOOLEAN DEFAULT false,
     is_featured BOOLEAN DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Garantir coluna stock_quantity se a tabela já existia:
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS stock_quantity INTEGER DEFAULT 5;
 
 -- 2. Criação da tabela de categorias (opcional para sincronização remota)
 CREATE TABLE IF NOT EXISTS public.categories (
@@ -49,12 +53,36 @@ CREATE TABLE IF NOT EXISTS public.store_settings (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 4. Habilitar Row Level Security (RLS)
+-- 4. Criação da tabela de Pedidos dos Clientes
+CREATE TABLE IF NOT EXISTS public.orders (
+    id TEXT PRIMARY KEY,
+    customer_name TEXT NOT NULL,
+    customer_phone TEXT NOT NULL,
+    delivery_type TEXT NOT NULL,
+    cep TEXT,
+    street TEXT,
+    number TEXT,
+    complement TEXT,
+    neighborhood TEXT,
+    city TEXT,
+    state TEXT,
+    notes TEXT,
+    items JSONB NOT NULL DEFAULT '[]'::jsonb,
+    subtotal NUMERIC(10, 2) NOT NULL,
+    total NUMERIC(10, 2) NOT NULL,
+    payment_method TEXT DEFAULT 'pix',
+    status TEXT DEFAULT 'pending',
+    stock_deducted BOOLEAN DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 5. Habilitar Row Level Security (RLS)
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.store_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 
--- 5. Criar Políticas de Acesso (Permitir leitura e escrita para a chave anônima da loja)
+-- 6. Criar Políticas de Acesso (Permitir leitura e escrita para a chave anônima da loja)
 -- Leitura pública para todos os visitantes da loja:
 CREATE POLICY "Permitir leitura pública de produtos" 
     ON public.products FOR SELECT 
@@ -83,6 +111,16 @@ CREATE POLICY "Permitir leitura de configurações"
 
 CREATE POLICY "Permitir atualização de configurações" 
     ON public.store_settings FOR ALL 
+    USING (true) 
+    WITH CHECK (true);
+
+-- Políticas para pedidos:
+CREATE POLICY "Permitir leitura de pedidos" 
+    ON public.orders FOR SELECT 
+    USING (true);
+
+CREATE POLICY "Permitir criação e atualização de pedidos" 
+    ON public.orders FOR ALL 
     USING (true) 
     WITH CHECK (true);
 

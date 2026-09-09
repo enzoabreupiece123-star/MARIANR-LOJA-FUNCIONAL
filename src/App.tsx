@@ -8,7 +8,7 @@ import { AdminModal } from './components/AdminModal';
 import { RenderSupabaseGuideModal } from './components/RenderSupabaseGuideModal';
 import { Footer } from './components/Footer';
 
-import { Product, Category, CartItem, StoreSettings } from './types';
+import { Product, Category, CartItem, StoreSettings, Order, OrderStatus } from './types';
 import { INITIAL_PRODUCTS, INITIAL_CATEGORIES, INITIAL_SETTINGS } from './data/initialProducts';
 import {
   getSupabase,
@@ -20,6 +20,10 @@ import {
   deleteRemoteCategory,
   fetchRemoteSettings,
   upsertRemoteSettings,
+  fetchRemoteOrders,
+  upsertRemoteOrder,
+  updateRemoteOrderStatus,
+  deleteRemoteOrder,
   getStoredSupabaseConfig,
 } from './lib/supabase';
 import { Sparkles, SlidersHorizontal, ShoppingBag, Check, Phone } from 'lucide-react';
@@ -75,6 +79,18 @@ export default function App() {
     return [];
   });
 
+  const [orders, setOrders] = useState<Order[]>(() => {
+    const saved = localStorage.getItem('mariane_orders');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
+
   // UI States
   const [selectedCategory, setSelectedCategory] = useState<string>('todas');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -103,6 +119,10 @@ export default function App() {
     localStorage.setItem('mariane_cart', JSON.stringify(cart));
   }, [cart]);
 
+  useEffect(() => {
+    localStorage.setItem('mariane_orders', JSON.stringify(orders));
+  }, [orders]);
+
   // 3. Attempt Supabase Sync on Mount
   const refreshFromSupabase = async () => {
     const { url, key } = getStoredSupabaseConfig();
@@ -110,10 +130,11 @@ export default function App() {
       const sb = getSupabase();
       if (sb) {
         setIsSupabaseConnected(true);
-        const [remoteProds, remoteCats, remoteSets] = await Promise.all([
+        const [remoteProds, remoteCats, remoteSets, remoteOrders] = await Promise.all([
           fetchRemoteProducts(),
           fetchRemoteCategories(),
           fetchRemoteSettings(),
+          fetchRemoteOrders(),
         ]);
         if (remoteProds && remoteProds.length > 0) {
           setProducts(remoteProds);
@@ -123,6 +144,9 @@ export default function App() {
         }
         if (remoteSets) {
           setSettings((prev) => ({ ...prev, ...remoteSets }));
+        }
+        if (remoteOrders && remoteOrders.length > 0) {
+          setOrders(remoteOrders);
         }
         return;
       }
@@ -241,6 +265,139 @@ export default function App() {
       await upsertRemoteSettings(newSettings);
     }
     triggerToast('Configurações atualizadas!');
+  };
+
+  // Admin Order Operations
+  const handleCreateOrder = async (newOrder: Order) => {
+    setOrders((prev) => [newOrder, ...prev]);
+    if (isSupabaseConnected) {
+      await upsertRemoteOrder(newOrder);
+    }
+  };
+
+  const handleConfirmOrder = async (orderId: string) => {
+    const targetOrder = orders.find((o) => o.id === orderId);
+    if (!targetOrder) return;
+
+    if (targetOrder.stockDeducted) {
+      triggerToast('O estoque deste pedido já foi baixado anteriormente.');
+      return;
+    }
+
+    // Deduct stock for all items in the order
+    setProducts((prevProducts) => {
+      return prevProducts.map((product) => {
+        const matchingItems = targetOrder.items.filter((it) => it.productId === product.id);
+        if (matchingItems.length === 0) return product;
+
+        const totalQtyOrdered = matchingItems.reduce((acc, curr) => acc + curr.quantity, 0);
+        const currentStock = product.stock_quantity !== undefined ? product.stock_quantity : (product.in_stock ? 5 : 0);
+        const nextStock = Math.max(0, currentStock - totalQtyOrdered);
+        const nextInStock = nextStock > 0;
+
+        const updatedProd: Product = {
+          ...product,
+          stock_quantity: nextStock,
+          in_stock: nextInStock,
+        };
+
+        if (isSupabaseConnected) {
+          upsertRemoteProduct(updatedProd).catch(console.error);
+        }
+
+        return updatedProd;
+      });
+    });
+
+    // Mark order as confirmed and stockDeducted: true
+    setOrders((prevOrders) =>
+      prevOrders.map((o) =>
+        o.id === orderId
+          ? { ...o, status: 'confirmed', stockDeducted: true }
+          : o
+      )
+    );
+
+    if (isSupabaseConnected) {
+      await updateRemoteOrderStatus(orderId, 'confirmed', true);
+    }
+
+    triggerToast(`Pedido ${orderId} confirmado! Peças baixadas do estoque com sucesso.`);
+  };
+
+  const handleUpdateOrderStatus = async (orderId: string, status: OrderStatus, restoreStock?: boolean) => {
+    const targetOrder = orders.find((o) => o.id === orderId);
+
+    // If restoring stock (e.g. order cancelled after confirmation)
+    if (restoreStock && targetOrder && targetOrder.stockDeducted) {
+      setProducts((prevProducts) => {
+        return prevProducts.map((product) => {
+          const matchingItems = targetOrder.items.filter((it) => it.productId === product.id);
+          if (matchingItems.length === 0) return product;
+
+          const totalQty = matchingItems.reduce((acc, curr) => acc + curr.quantity, 0);
+          const currentStock = product.stock_quantity !== undefined ? product.stock_quantity : 0;
+          const nextStock = currentStock + totalQty;
+
+          const updatedProd: Product = {
+            ...product,
+            stock_quantity: nextStock,
+            in_stock: nextStock > 0,
+          };
+
+          if (isSupabaseConnected) {
+            upsertRemoteProduct(updatedProd).catch(console.error);
+          }
+
+          return updatedProd;
+        });
+      });
+    }
+
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              status,
+              stockDeducted: restoreStock ? false : o.stockDeducted,
+            }
+          : o
+      )
+    );
+
+    if (isSupabaseConnected) {
+      await updateRemoteOrderStatus(orderId, status, restoreStock ? false : undefined);
+    }
+
+    triggerToast(`Status do pedido atualizado para "${status}".`);
+  };
+
+  const handleDeleteOrder = async (orderId: string) => {
+    setOrders((prev) => prev.filter((o) => o.id !== orderId));
+    if (isSupabaseConnected) {
+      await deleteRemoteOrder(orderId);
+    }
+    triggerToast('Pedido removido do histórico.');
+  };
+
+  const handleQuickAdjustStock = async (productId: string, delta: number) => {
+    setProducts((prev) => {
+      return prev.map((p) => {
+        if (p.id !== productId) return p;
+        const current = p.stock_quantity !== undefined ? p.stock_quantity : (p.in_stock ? 5 : 0);
+        const next = Math.max(0, current + delta);
+        const updated: Product = {
+          ...p,
+          stock_quantity: next,
+          in_stock: next > 0,
+        };
+        if (isSupabaseConnected) {
+          upsertRemoteProduct(updated).catch(console.error);
+        }
+        return updated;
+      });
+    });
   };
 
   // Filter and Sort Products
@@ -489,6 +646,7 @@ export default function App() {
         onUpdateQuantity={handleUpdateCartQuantity}
         onRemoveItem={handleRemoveCartItem}
         onClearCart={handleClearCart}
+        onCreateOrder={handleCreateOrder}
         settings={settings}
       />
 
@@ -499,11 +657,16 @@ export default function App() {
         products={products}
         categories={categories}
         settings={settings}
+        orders={orders}
         onSaveProduct={handleSaveProduct}
         onDeleteProduct={handleDeleteProduct}
         onSaveCategory={handleSaveCategory}
         onDeleteCategory={handleDeleteCategory}
         onSaveSettings={handleSaveSettings}
+        onConfirmOrder={handleConfirmOrder}
+        onUpdateOrderStatus={handleUpdateOrderStatus}
+        onDeleteOrder={handleDeleteOrder}
+        onQuickAdjustStock={handleQuickAdjustStock}
         onOpenGuide={() => setIsGuideOpen(true)}
         isSupabaseConnected={isSupabaseConnected}
         onRefreshData={refreshFromSupabase}

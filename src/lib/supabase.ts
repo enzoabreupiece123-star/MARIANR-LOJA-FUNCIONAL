@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Product, Category, StoreSettings } from '../types';
+import { Product, Category, StoreSettings, Order, OrderStatus } from '../types';
 
 let supabaseClient: SupabaseClient | null = null;
 
@@ -90,7 +90,8 @@ export async function fetchRemoteProducts(): Promise<Product[] | null> {
         details: Array.isArray(item.details) ? item.details : [],
         sizes: Array.isArray(item.sizes) ? item.sizes : ['P', 'M', 'G'],
         colors: Array.isArray(item.colors) ? item.colors : [],
-        in_stock: item.in_stock ?? true,
+        stock_quantity: item.stock_quantity !== undefined && item.stock_quantity !== null ? Number(item.stock_quantity) : 5,
+        in_stock: item.in_stock !== undefined ? Boolean(item.in_stock) : ((item.stock_quantity ?? 1) > 0),
         is_new: item.is_new ?? false,
         is_featured: item.is_featured ?? false,
         created_at: item.created_at || new Date().toISOString()
@@ -119,7 +120,8 @@ export async function upsertRemoteProduct(product: Product): Promise<boolean> {
       details: product.details || [],
       sizes: product.sizes,
       colors: product.colors,
-      in_stock: product.in_stock,
+      stock_quantity: product.stock_quantity !== undefined ? product.stock_quantity : 5,
+      in_stock: (product.stock_quantity !== undefined ? product.stock_quantity > 0 : product.in_stock),
       is_new: product.is_new || false,
       is_featured: product.is_featured || false,
       updated_at: new Date().toISOString()
@@ -277,5 +279,123 @@ export async function uploadProductImage(blob: Blob, filename: string): Promise<
     return null;
   }
 }
+
+/**
+ * =====================================================================
+ * Orders Management (Supabase Remote Persistence)
+ * =====================================================================
+ */
+export async function fetchRemoteOrders(): Promise<Order[] | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+
+  try {
+    const { data, error } = await sb
+      .from('orders')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.warn('Supabase fetchOrders error:', error.message);
+      return null;
+    }
+
+    if (data) {
+      return data.map((item: any) => ({
+        id: String(item.id),
+        customerName: item.customer_name,
+        customerPhone: item.customer_phone,
+        deliveryType: item.delivery_type,
+        cep: item.cep || '',
+        street: item.street || '',
+        number: item.number || '',
+        complement: item.complement || '',
+        neighborhood: item.neighborhood || '',
+        city: item.city || '',
+        state: item.state || '',
+        notes: item.notes || '',
+        items: Array.isArray(item.items) ? item.items : [],
+        subtotal: Number(item.subtotal || 0),
+        total: Number(item.total || 0),
+        paymentMethod: item.payment_method || 'pix',
+        status: (item.status as OrderStatus) || 'pending',
+        stockDeducted: Boolean(item.stock_deducted),
+        createdAt: item.created_at || new Date().toISOString(),
+      }));
+    }
+    return null;
+  } catch (err) {
+    console.warn('Supabase fetchOrders failed:', err);
+    return null;
+  }
+}
+
+export async function upsertRemoteOrder(order: Order): Promise<boolean> {
+  const sb = getSupabase();
+  if (!sb) return false;
+
+  try {
+    const { error } = await sb.from('orders').upsert({
+      id: order.id,
+      customer_name: order.customerName,
+      customer_phone: order.customerPhone,
+      delivery_type: order.deliveryType,
+      cep: order.cep || null,
+      street: order.street || null,
+      number: order.number || null,
+      complement: order.complement || null,
+      neighborhood: order.neighborhood || null,
+      city: order.city || null,
+      state: order.state || null,
+      notes: order.notes || null,
+      items: order.items,
+      subtotal: order.subtotal,
+      total: order.total,
+      payment_method: order.paymentMethod,
+      status: order.status,
+      stock_deducted: order.stockDeducted || false,
+      created_at: order.createdAt,
+    });
+
+    if (error) {
+      console.error('Supabase upsertOrder error:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Supabase upsertOrder failed:', err);
+    return false;
+  }
+}
+
+export async function updateRemoteOrderStatus(orderId: string, status: OrderStatus, stockDeducted?: boolean): Promise<boolean> {
+  const sb = getSupabase();
+  if (!sb) return false;
+
+  try {
+    const updatePayload: any = { status };
+    if (stockDeducted !== undefined) {
+      updatePayload.stock_deducted = stockDeducted;
+    }
+
+    const { error } = await sb.from('orders').update(updatePayload).eq('id', orderId);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteRemoteOrder(orderId: string): Promise<boolean> {
+  const sb = getSupabase();
+  if (!sb) return false;
+
+  try {
+    const { error } = await sb.from('orders').delete().eq('id', orderId);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
 
 

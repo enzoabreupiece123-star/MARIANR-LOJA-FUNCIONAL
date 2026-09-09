@@ -19,13 +19,18 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       ? Math.round(((product.original_price - product.price) / product.original_price) * 100)
       : null;
 
+  const isOutOfStock = !product.in_stock || (product.stock_quantity !== undefined && product.stock_quantity <= 0);
+  const isLowStock = !isOutOfStock && product.stock_quantity !== undefined && product.stock_quantity > 0 && product.stock_quantity <= 3;
+
   const primaryImage = product.images?.[0] || 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=800&q=80';
   const secondaryImage = product.images?.[1] || primaryImage;
 
   return (
     <article
       id={`product-card-${product.id}`}
-      className="group flex flex-col bg-white rounded-xl overflow-hidden border border-[#eae3d9] hover:border-[#cfc2b0] hover:shadow-md transition-all duration-300"
+      className={`group flex flex-col bg-white rounded-xl overflow-hidden border transition-all duration-300 ${
+        isOutOfStock ? 'opacity-85 border-[#e5dfd7]' : 'border-[#eae3d9] hover:border-[#cfc2b0] hover:shadow-md'
+      }`}
     >
       {/* Product Image Frame */}
       <div
@@ -36,7 +41,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           src={primaryImage}
           alt={product.name}
           loading="lazy"
-          className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-700 ease-out"
+          className={`w-full h-full object-cover object-center transition-transform duration-700 ease-out ${
+            isOutOfStock ? 'grayscale-[35%]' : 'group-hover:scale-105'
+          }`}
           onError={(e) => {
             // fallback if broken url
             (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=800&q=80';
@@ -45,20 +52,28 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
         {/* Badges Container */}
         <div className="absolute top-3 left-3 flex flex-col gap-1.5 z-10">
-          {!product.in_stock && (
-            <span className="bg-[#1c1917]/90 text-white text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded backdrop-blur-sm">
-              Esgotado
+          {isOutOfStock ? (
+            <span className="bg-[#1c1917]/95 text-[#f5efe6] text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded backdrop-blur-sm border border-white/20">
+              Indisponível (Sem Estoque)
             </span>
-          )}
-          {product.in_stock && product.is_new && (
-            <span className="bg-[#c5a059] text-white text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded shadow-sm">
-              Novidade
-            </span>
-          )}
-          {product.in_stock && discountPercent && (
-            <span className="bg-[#9c3030] text-white text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded shadow-sm">
-              -{discountPercent}% OFF
-            </span>
+          ) : (
+            <>
+              {isLowStock && (
+                <span className="bg-amber-600 text-white text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded shadow-sm">
+                  Restam apenas {product.stock_quantity} un.!
+                </span>
+              )}
+              {product.is_new && (
+                <span className="bg-[#c5a059] text-white text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded shadow-sm">
+                  Novidade
+                </span>
+              )}
+              {discountPercent && (
+                <span className="bg-[#9c3030] text-white text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded shadow-sm">
+                  -{discountPercent}% OFF
+                </span>
+              )}
+            </>
           )}
         </div>
 
@@ -77,7 +92,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             Ver Peça
           </button>
           
-          {product.in_stock && (
+          {!isOutOfStock && (
             <button
               type="button"
               id={`btn-quick-add-${product.id}`}

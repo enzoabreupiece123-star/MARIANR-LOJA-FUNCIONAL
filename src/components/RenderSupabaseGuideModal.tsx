@@ -13,7 +13,7 @@ export const RenderSupabaseGuideModal: React.FC<RenderSupabaseGuideModalProps> =
 
   if (!isOpen) return null;
 
-  const sqlCode = `-- TABELA DE PRODUTOS
+  const sqlCode = `-- 1. TABELA DE PRODUTOS
 CREATE TABLE IF NOT EXISTS public.products (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS public.products (
     details TEXT[] DEFAULT '{}',
     sizes TEXT[] DEFAULT '{"P", "M", "G"}',
     colors TEXT[] DEFAULT '{}',
+    stock_quantity INTEGER DEFAULT 5,
     in_stock BOOLEAN DEFAULT true,
     is_new BOOLEAN DEFAULT false,
     is_featured BOOLEAN DEFAULT false,
@@ -32,12 +33,42 @@ CREATE TABLE IF NOT EXISTS public.products (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- HABILITAR RLS E PERMISSÕES PÚBLICAS
-ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Permitir leitura pública" ON public.products FOR SELECT USING (true);
-CREATE POLICY "Permitir alterações" ON public.products FOR ALL USING (true) WITH CHECK (true);
+-- Garantir coluna stock_quantity caso a tabela já existisse
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS stock_quantity INTEGER DEFAULT 5;
 
--- BUCKET DE FOTOS DO DISPOSITIVO (SUPABASE STORAGE)
+-- 2. TABELA DE PEDIDOS
+CREATE TABLE IF NOT EXISTS public.orders (
+    id TEXT PRIMARY KEY,
+    customer_name TEXT NOT NULL,
+    customer_phone TEXT NOT NULL,
+    delivery_type TEXT NOT NULL,
+    cep TEXT,
+    street TEXT,
+    number TEXT,
+    complement TEXT,
+    neighborhood TEXT,
+    city TEXT,
+    state TEXT,
+    notes TEXT,
+    items JSONB NOT NULL DEFAULT '[]'::jsonb,
+    subtotal NUMERIC(10, 2) NOT NULL,
+    total NUMERIC(10, 2) NOT NULL,
+    payment_method TEXT DEFAULT 'pix',
+    status TEXT DEFAULT 'pending',
+    stock_deducted BOOLEAN DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 3. HABILITAR RLS E PERMISSÕES PÚBLICAS
+ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Permitir leitura pública produtos" ON public.products FOR SELECT USING (true);
+CREATE POLICY "Permitir alterações produtos" ON public.products FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Permitir leitura pedidos" ON public.orders FOR SELECT USING (true);
+CREATE POLICY "Permitir gravação pedidos" ON public.orders FOR ALL USING (true) WITH CHECK (true);
+
+-- 4. BUCKET DE FOTOS DO DISPOSITIVO (SUPABASE STORAGE)
 INSERT INTO storage.buckets (id, name, public) VALUES ('product-images', 'product-images', true) ON CONFLICT (id) DO NOTHING;
 CREATE POLICY "Fotos públicas" ON storage.objects FOR SELECT USING (bucket_id = 'product-images');
 CREATE POLICY "Upload de fotos" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'product-images');
