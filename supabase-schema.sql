@@ -135,3 +135,27 @@ VALUES
   true
 )
 ON CONFLICT (id) DO NOTHING;
+
+-- 7. Bucket de Armazenamento de Fotos (Supabase Storage)
+-- Cria o bucket 'product-images' público para receber as fotos enviadas do celular ou computador
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('product-images', 'product-images', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Políticas de acesso para o bucket de fotos
+DROP POLICY IF EXISTS "Fotos de produtos são públicas" ON storage.objects;
+CREATE POLICY "Fotos de produtos são públicas" ON storage.objects
+    FOR SELECT USING (bucket_id = 'product-images');
+
+DROP POLICY IF EXISTS "Permitir upload de fotos no bucket" ON storage.objects;
+CREATE POLICY "Permitir upload de fotos no bucket" ON storage.objects
+    FOR INSERT WITH CHECK (bucket_id = 'product-images');
+
+DROP POLICY IF EXISTS "Permitir atualizar fotos no bucket" ON storage.objects;
+CREATE POLICY "Permitir atualizar fotos no bucket" ON storage.objects
+    FOR UPDATE USING (bucket_id = 'product-images');
+
+DROP POLICY IF EXISTS "Permitir deletar fotos no bucket" ON storage.objects;
+CREATE POLICY "Permitir deletar fotos no bucket" ON storage.objects
+    FOR DELETE USING (bucket_id = 'product-images');
+

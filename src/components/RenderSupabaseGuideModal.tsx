@@ -35,7 +35,15 @@ CREATE TABLE IF NOT EXISTS public.products (
 -- HABILITAR RLS E PERMISSÕES PÚBLICAS
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Permitir leitura pública" ON public.products FOR SELECT USING (true);
-CREATE POLICY "Permitir alterações" ON public.products FOR ALL USING (true) WITH CHECK (true);`;
+CREATE POLICY "Permitir alterações" ON public.products FOR ALL USING (true) WITH CHECK (true);
+
+-- BUCKET DE FOTOS DO DISPOSITIVO (SUPABASE STORAGE)
+INSERT INTO storage.buckets (id, name, public) VALUES ('product-images', 'product-images', true) ON CONFLICT (id) DO NOTHING;
+CREATE POLICY "Fotos públicas" ON storage.objects FOR SELECT USING (bucket_id = 'product-images');
+CREATE POLICY "Upload de fotos" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'product-images');
+CREATE POLICY "Atualizar fotos" ON storage.objects FOR UPDATE USING (bucket_id = 'product-images');
+CREATE POLICY "Excluir fotos" ON storage.objects FOR DELETE USING (bucket_id = 'product-images');`;
+
 
   const envSample = `VITE_SUPABASE_URL=https://seu-projeto.supabase.co
 VITE_SUPABASE_ANON_KEY=sua-chave-anon-aqui

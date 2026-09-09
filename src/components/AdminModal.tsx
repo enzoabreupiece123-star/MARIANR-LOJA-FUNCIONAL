@@ -1,12 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X, Plus, Trash2, Edit3, ShieldCheck, Database, Key, Sparkles, Check,
   AlertCircle, Image as ImageIcon, Save, ArrowLeft, RefreshCw, HelpCircle, Eye,
-  EyeOff, Lock, AlertTriangle
+  EyeOff, Lock, AlertTriangle, Camera, UploadCloud, Loader2, Star, Link as LinkIcon
 } from 'lucide-react';
 import { Product, Category, StoreSettings } from '../types';
 import { formatCurrency } from '../lib/utils';
-import { testSupabaseConnection, saveSupabaseConfig, upsertRemoteProduct, deleteRemoteProduct } from '../lib/supabase';
+import {
+  testSupabaseConnection,
+  saveSupabaseConfig,
+  upsertRemoteProduct,
+  deleteRemoteProduct,
+  uploadProductImage,
+} from '../lib/supabase';
+import { compressImage } from '../lib/imageCompressor';
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -63,7 +70,13 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [formCategory, setFormCategory] = useState(categories[0]?.name || 'Vestidos');
   const [formPrice, setFormPrice] = useState('');
   const [formOriginalPrice, setFormOriginalPrice] = useState('');
-  const [formImagesText, setFormImagesText] = useState('');
+  const [formImages, setFormImages] = useState<string[]>([]);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [uploadProgressMsg, setUploadProgressMsg] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [formDescription, setFormDescription] = useState('');
   const [formDetailsText, setFormDetailsText] = useState('');
   const [formSizes, setFormSizes] = useState<string[]>(['P', 'M', 'G']);
@@ -146,6 +159,62 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     setTimeout(() => setPasswordChangeStatus(null), 5000);
   };
 
+  // Handle Files Uploaded from Device (Camera, Gallery, Drag-and-Drop)
+  const handleFilesSelected = async (files: FileList | File[]) => {
+    const fileArray = Array.from(files).filter((f) => f.type.startsWith('image/'));
+    if (fileArray.length === 0) return;
+
+    setIsUploadingImage(true);
+    setUploadProgressMsg(`Processando ${fileArray.length} foto(s)...`);
+
+    const newUrls: string[] = [];
+
+    for (let i = 0; i < fileArray.length; i++) {
+      const file = fileArray[i];
+      try {
+        setUploadProgressMsg(`Otimizando foto ${i + 1} de ${fileArray.length}...`);
+        const compressed = await compressImage(file, 1200, 1200, 0.85);
+
+        // Try Supabase Storage if connected
+        if (isSupabaseConnected) {
+          setUploadProgressMsg(`Enviando foto ${i + 1} para o Supabase...`);
+          const remoteUrl = await uploadProductImage(compressed.blob, compressed.name);
+          if (remoteUrl) {
+            newUrls.push(remoteUrl);
+            continue;
+          }
+        }
+
+        // Fallback / immediate local storage: use compressed high-quality dataUrl
+        newUrls.push(compressed.dataUrl);
+      } catch (err) {
+        console.warn('Erro ao processar imagem:', err);
+      }
+    }
+
+    setFormImages((prev) => [...prev, ...newUrls]);
+    setIsUploadingImage(false);
+    setUploadProgressMsg(null);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFilesSelected(e.dataTransfer.files);
+    }
+  };
+
   // Open Form for New Product
   const handleStartNewProduct = () => {
     setEditingProductId(null);
@@ -153,7 +222,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     setFormCategory(categories[0]?.name || 'Vestidos');
     setFormPrice('');
     setFormOriginalPrice('');
-    setFormImagesText('https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=1000&q=80');
+    setFormImages(['https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=1000&q=80']);
     setFormDescription('Peça exclusiva com caimento fluido e acabamento sofisticado em alfaiataria autoral.');
     setFormDetailsText('Puro linho com toque suave\nForro interno 100% algodão\nFechamento com zíper invisível');
     setFormSizes(['P', 'M', 'G']);
@@ -171,7 +240,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     setFormCategory(prod.category);
     setFormPrice(String(prod.price));
     setFormOriginalPrice(prod.original_price ? String(prod.original_price) : '');
-    setFormImagesText(prod.images.join('\n'));
+    setFormImages(prod.images && prod.images.length > 0 ? prod.images : []);
     setFormDescription(prod.description);
     setFormDetailsText(prod.details ? prod.details.join('\n') : '');
     setFormSizes(prod.sizes || ['P', 'M', 'G']);
@@ -193,10 +262,10 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
     const origPriceNum = formOriginalPrice.trim() ? parseFloat(formOriginalPrice.replace(',', '.')) : null;
 
-    const images = formImagesText
-      .split('\n')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
+    if (formImages.length === 0) {
+      alert('Por favor, adicione pelo menos uma foto para a roupa do seu celular, computador ou link.');
+      return;
+    }
 
     const details = formDetailsText
       .split('\n')
@@ -214,7 +283,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       category: formCategory,
       price: priceNum,
       original_price: origPriceNum,
-      images: images.length > 0 ? images : ['https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=1000&q=80'],
+      images: formImages,
       description: formDescription.trim(),
       details,
       sizes: formSizes.length > 0 ? formSizes : ['Único'],
@@ -228,6 +297,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     onSaveProduct(newProduct);
     setActiveTab('products');
   };
+
 
   // Toggle Size in Form
   const toggleSize = (size: string) => {
@@ -697,44 +767,209 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Image URLs & Preset Selection */}
-                    <div className="sm:col-span-2 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="block text-xs font-semibold text-[#5c544c]">
-                          Links das Fotos (uma URL por linha):
-                        </label>
-                        <span className="text-[11px] text-[#8e6e34]">
-                          Ou selecione fotos prontas abaixo
+                    {/* Photos from Device (Camera / Gallery / Drag & Drop) */}
+                    <div className="sm:col-span-2 space-y-3 p-4 bg-[#faf8f5] rounded-2xl border border-[#e8dfd2]">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                          <label className="block text-xs font-semibold text-[#1c1917] flex items-center gap-1.5">
+                            <Camera className="w-4 h-4 text-[#8e6e34]" />
+                            Fotos da Roupa *
+                          </label>
+                          <p className="text-[11px] text-[#786e64]">
+                            Envie fotos direto do seu celular ou computador. A 1ª foto é a capa da peça.
+                          </p>
+                        </div>
+                        <span className="text-[11px] font-semibold text-[#8e6e34] bg-white px-3 py-1 rounded-full border border-[#e8dfd2] w-fit">
+                          {formImages.length} {formImages.length === 1 ? 'foto' : 'fotos'} adicionada(s)
                         </span>
                       </div>
-                      <textarea
-                        rows={3}
-                        required
-                        placeholder="https://..."
-                        value={formImagesText}
-                        onChange={(e) => setFormImagesText(e.target.value)}
-                        className="w-full text-xs p-3 bg-[#faf8f5] border border-[#d5cbbe] rounded-xl focus:bg-white focus:border-[#8e6e34] focus:outline-none font-mono"
+
+                      {/* Hidden File Input for Device Upload */}
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files.length > 0) {
+                            handleFilesSelected(e.target.files);
+                            e.target.value = '';
+                          }
+                        }}
+                        className="hidden"
                       />
 
-                      {/* Presets */}
-                      <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-                        <span className="text-[10px] text-[#8c8278] uppercase shrink-0">Fotos Prontas:</span>
-                        {PRESET_FASHION_IMAGES.map((preset, idx) => (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => {
-                              if (!formImagesText.includes(preset.url)) {
-                                setFormImagesText((prev) => (prev ? prev + '\n' + preset.url : preset.url));
-                              }
-                            }}
-                            className="px-2 py-1 text-[10px] bg-[#f0ebe1] hover:bg-[#e4dcd0] text-[#4d443c] rounded border border-[#d5cbbe] shrink-0"
-                          >
-                            + {preset.label}
-                          </button>
-                        ))}
+                      {/* Drag & Drop / Click Upload Box */}
+                      <div
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                        onClick={() => fileInputRef.current?.click()}
+                        className={`p-6 sm:p-7 rounded-xl border-2 border-dashed transition-all cursor-pointer text-center flex flex-col items-center justify-center gap-2.5 ${
+                          isDragging
+                            ? 'border-[#8e6e34] bg-[#faf5ec] scale-[1.01]'
+                            : 'border-[#d5cbbe] hover:border-[#8e6e34] bg-white hover:bg-[#fcfaf7]'
+                        }`}
+                      >
+                        <div className="w-12 h-12 rounded-full bg-[#faf5ec] flex items-center justify-center text-[#8e6e34] border border-[#e8dfd2] shadow-xs">
+                          {isUploadingImage ? (
+                            <Loader2 className="w-6 h-6 animate-spin text-[#8e6e34]" />
+                          ) : (
+                            <UploadCloud className="w-6 h-6" />
+                          )}
+                        </div>
+
+                        <div>
+                          <p className="text-xs font-semibold text-[#1c1917]">
+                            {isUploadingImage
+                              ? uploadProgressMsg || 'Processando fotos do dispositivo...'
+                              : 'Clique para escolher fotos do seu celular ou computador'}
+                          </p>
+                          <p className="text-[11px] text-[#786e64] mt-0.5">
+                            Ou arraste e solte arquivos aqui • Câmera, galeria ou arquivos (PNG, JPG, WEBP)
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={isUploadingImage}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            fileInputRef.current?.click();
+                          }}
+                          className="px-4 py-2 bg-[#1c1917] hover:bg-[#322c29] text-white text-xs font-medium rounded-xl transition-all shadow-xs flex items-center gap-1.5 mt-1"
+                        >
+                          <Camera className="w-3.5 h-3.5 text-[#e6c687]" />
+                          Selecionar Fotos do Dispositivo
+                        </button>
+                      </div>
+
+                      {/* Visual Gallery with Badges & Actions */}
+                      {formImages.length > 0 && (
+                        <div className="space-y-2 pt-2">
+                          <p className="text-[11px] font-semibold text-[#5c544c] uppercase tracking-wider">
+                            Fotos desta peça ({formImages.length}):
+                          </p>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            {formImages.map((imgUrl, idx) => (
+                              <div
+                                key={idx}
+                                className="group relative aspect-[3/4] rounded-xl overflow-hidden bg-stone-100 border border-[#e8dfd2] shadow-xs"
+                              >
+                                <img
+                                  src={imgUrl}
+                                  alt={`Foto ${idx + 1}`}
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+
+                                {/* Badge: Cover or #Number */}
+                                <div className="absolute top-2 left-2 z-10 pointer-events-none">
+                                  {idx === 0 ? (
+                                    <span className="px-2 py-0.5 rounded-md bg-[#1c1917]/90 text-white text-[10px] font-semibold flex items-center gap-1 shadow-sm">
+                                      <Star className="w-3 h-3 text-[#e6c687] fill-current" /> Capa
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-md bg-black/60 text-white text-[10px] font-medium shadow-sm">
+                                      #{idx + 1}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Action Buttons Overlay */}
+                                <div className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-2">
+                                  <div className="flex justify-end">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setFormImages(formImages.filter((_, i) => i !== idx));
+                                      }}
+                                      title="Remover foto"
+                                      className="p-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors shadow-sm"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+
+                                  {idx > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        // Move this image to index 0 (Cover)
+                                        setFormImages([formImages[idx], ...formImages.filter((_, i) => i !== idx)]);
+                                      }}
+                                      className="w-full py-1.5 bg-white/95 hover:bg-white text-[#1c1917] text-[10px] font-semibold rounded-lg shadow-sm transition-colors text-center"
+                                    >
+                                      Tornar Foto de Capa
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Optional Link / Presets Accordion */}
+                      <div className="pt-2 border-t border-[#e8dfd2]">
+                        <button
+                          type="button"
+                          onClick={() => setShowUrlInput(!showUrlInput)}
+                          className="text-xs text-[#8e6e34] hover:underline flex items-center gap-1.5 font-medium"
+                        >
+                          <LinkIcon className="w-3.5 h-3.5" />
+                          {showUrlInput ? 'Ocultar opção de links da internet' : 'Ou colar link de imagem da internet'}
+                        </button>
+
+                        {showUrlInput && (
+                          <div className="mt-3 p-3 bg-white rounded-xl border border-[#d5cbbe] space-y-3">
+                            <div className="flex gap-2">
+                              <input
+                                type="url"
+                                placeholder="Cole a URL da foto (https://...)"
+                                value={urlInput}
+                                onChange={(e) => setUrlInput(e.target.value)}
+                                className="flex-1 text-xs p-2.5 bg-[#faf8f5] border border-[#d5cbbe] rounded-lg focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (urlInput.trim()) {
+                                    setFormImages([...formImages, urlInput.trim()]);
+                                    setUrlInput('');
+                                  }
+                                }}
+                                className="px-3.5 py-2 bg-[#1c1917] hover:bg-[#322c29] text-white text-xs font-semibold rounded-lg shrink-0 transition-colors"
+                              >
+                                Adicionar
+                              </button>
+                            </div>
+
+                            {/* Preset quick buttons */}
+                            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                              <span className="text-[10px] text-[#8c8278] uppercase shrink-0">Fotos prontas:</span>
+                              {PRESET_FASHION_IMAGES.map((preset, idx) => (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() => {
+                                    if (!formImages.includes(preset.url)) {
+                                      setFormImages((prev) => [...prev, preset.url]);
+                                    }
+                                  }}
+                                  className="px-2 py-1 text-[10px] bg-[#f0ebe1] hover:bg-[#e4dcd0] text-[#4d443c] rounded border border-[#d5cbbe] shrink-0"
+                                >
+                                  + {preset.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
+
 
                     {/* Description */}
                     <div className="sm:col-span-2">

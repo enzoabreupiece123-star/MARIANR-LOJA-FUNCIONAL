@@ -243,3 +243,39 @@ export async function upsertRemoteSettings(settings: StoreSettings): Promise<boo
   }
 }
 
+/**
+ * Upload an image blob directly to Supabase Storage bucket 'product-images'
+ * If the bucket is not available or upload fails, returns null (caller will use local compressed base64 dataUrl)
+ */
+export async function uploadProductImage(blob: Blob, filename: string): Promise<string | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+
+  try {
+    const cleanName = filename.toLowerCase().replace(/[^a-z0-9._-]/g, '_');
+    const path = `products/${Date.now()}_${cleanName}`;
+
+    const { data, error } = await sb.storage
+      .from('product-images')
+      .upload(path, blob, {
+        contentType: blob.type || 'image/jpeg',
+        upsert: true,
+      });
+
+    if (error) {
+      console.warn('Supabase storage upload notice:', error.message);
+      return null;
+    }
+
+    const { data: publicData } = sb.storage
+      .from('product-images')
+      .getPublicUrl(data.path);
+
+    return publicData?.publicUrl || null;
+  } catch (err) {
+    console.warn('Erro ao subir imagem no Supabase Storage:', err);
+    return null;
+  }
+}
+
+
