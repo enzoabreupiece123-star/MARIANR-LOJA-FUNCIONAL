@@ -1,0 +1,6 @@
+{
+  "name": "Mariane Moreira Concepts",
+  "description": "Loja de moda feminina com catálogo elegante, gerenciamento de produtos e categorias, carrinho de compras e fechamento de pedidos via WhatsApp com chave Pix.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
