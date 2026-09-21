@@ -78,6 +78,7 @@ export interface Order {
   paymentMethod: 'pix' | 'whatsapp';
   status: OrderStatus;
   stockDeducted?: boolean;
+  receiptImage?: string;
   createdAt: string;
 }
 

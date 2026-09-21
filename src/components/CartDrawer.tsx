@@ -1,8 +1,28 @@
-import React, { useState } from 'react';
-import { X, Trash2, ShoppingBag, Send, Copy, Check, Sparkles, MapPin, Store, AlertCircle, Search, Loader2 } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import {
+  X,
+  Trash2,
+  ShoppingBag,
+  Send,
+  Copy,
+  Check,
+  Sparkles,
+  MapPin,
+  Store,
+  AlertCircle,
+  Search,
+  Loader2,
+  Camera,
+  Upload,
+  Image as ImageIcon,
+  FileCheck,
+  Eye,
+} from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { CartItem, CustomerOrderData, DeliveryType, StoreSettings, Order } from '../types';
 import { formatCurrency, generateWhatsAppOrderUrl, copyToClipboard } from '../lib/utils';
+import { compressImage } from '../lib/imageCompressor';
+import { uploadProductImage } from '../lib/supabase';
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -43,6 +63,16 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [isSearchingCep, setIsSearchingCep] = useState(false);
   const [cepNotice, setCepNotice] = useState<string | null>(null);
+
+  // PIX Receipt states
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptBlob, setReceiptBlob] = useState<Blob | null>(null);
+  const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
+  const [receiptFileName, setReceiptFileName] = useState<string>('');
+  const [isProcessingReceipt, setIsProcessingReceipt] = useState(false);
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
+  const [showReceiptZoom, setShowReceiptZoom] = useState(false);
+  const receiptInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
@@ -86,7 +116,54 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     }
   };
 
-  const handleCheckout = () => {
+  const handleReceiptFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setFormError('Por favor, selecione um arquivo de imagem válido (JPG, PNG, HEIC, etc.) para o comprovante.');
+      return;
+    }
+
+    setFormError(null);
+    setIsProcessingReceipt(true);
+
+    try {
+      // Compress smartphone photo/screenshot (max 1200px, fast, lightweight ~150KB)
+      const compressed = await compressImage(file, 1200, 1200, 0.82);
+      setReceiptFile(file);
+      setReceiptBlob(compressed.blob);
+      setReceiptPreview(compressed.dataUrl);
+      setReceiptFileName(file.name);
+    } catch (err) {
+      console.warn('Compress fallback to direct data URL:', err);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setReceiptPreview(event.target?.result as string);
+        setReceiptFile(file);
+        setReceiptBlob(file);
+        setReceiptFileName(file.name);
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setIsProcessingReceipt(false);
+      if (receiptInputRef.current) {
+        receiptInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleRemoveReceipt = () => {
+    setReceiptFile(null);
+    setReceiptBlob(null);
+    setReceiptPreview(null);
+    setReceiptFileName('');
+    if (receiptInputRef.current) {
+      receiptInputRef.current.value = '';
+    }
+  };
+
+  const handleCheckout = async () => {
     setFormError(null);
 
     // Basic validations
@@ -119,65 +196,96 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       }
     }
 
-    // Generate unique order ID
-    const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-    const orderId = `MM-${Date.now().toString().slice(-4)}${randomSuffix}`;
-
-    // Build Order object
-    const newOrder: Order = {
-      id: orderId,
-      customerName: customer.name.trim(),
-      customerPhone: customer.phone.trim(),
-      deliveryType: customer.deliveryType,
-      cep: customer.cep?.trim() || '',
-      street: customer.street?.trim() || '',
-      number: customer.number?.trim() || '',
-      complement: customer.complement?.trim() || '',
-      neighborhood: customer.neighborhood?.trim() || '',
-      city: customer.city?.trim() || '',
-      state: customer.state?.trim() || '',
-      notes: customer.notes?.trim() || '',
-      items: items.map((item) => ({
-        productId: item.product.id,
-        productName: item.product.name,
-        productImage: item.product.images?.[0] || '',
-        size: item.selectedSize,
-        color: item.selectedColor,
-        price: item.product.price,
-        quantity: item.quantity,
-      })),
-      subtotal,
-      total: subtotal,
-      paymentMethod: 'pix',
-      status: 'pending',
-      stockDeducted: false,
-      createdAt: new Date().toISOString(),
-    };
-
-    // Save order in store state / Supabase
-    onCreateOrder(newOrder);
-
-    // Trigger celebration confetti!
-    try {
-      confetti({
-        particleCount: 80,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: ['#c5a059', '#1c1917', '#e8decd', '#ffffff'],
-      });
-    } catch {
-      // safe fallback
+    // MANDATORY RECEIPT VALIDATION: Must attach receipt to proceed to WhatsApp
+    if (!receiptPreview) {
+      setFormError('⚠️ É obrigatório anexar o comprovante do PIX para liberar o envio do seu pedido no WhatsApp!');
+      const el = document.getElementById('pix-receipt-section');
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
     }
 
-    // Generate WhatsApp URL with order ID
-    const whatsappUrl = generateWhatsAppOrderUrl(items, customer, settings, orderId);
+    setIsSubmittingOrder(true);
 
-    // Open WhatsApp
-    window.open(whatsappUrl, '_blank');
+    try {
+      // Generate unique order ID
+      const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+      const orderId = `MM-${Date.now().toString().slice(-4)}${randomSuffix}`;
 
-    // Clear cart so client has a clean state
-    onClearCart();
-    onClose();
+      // Upload receipt to Supabase Storage if available
+      let uploadedReceiptUrl: string | undefined = undefined;
+      if (receiptBlob) {
+        try {
+          const remoteUrl = await uploadProductImage(receiptBlob, `comprovante_${orderId}.jpg`);
+          if (remoteUrl) {
+            uploadedReceiptUrl = remoteUrl;
+          }
+        } catch (err) {
+          console.warn('Notice: upload to Supabase storage skipped, using base64 preview:', err);
+        }
+      }
+
+      const finalReceiptImage = uploadedReceiptUrl || receiptPreview;
+
+      // Build Order object
+      const newOrder: Order = {
+        id: orderId,
+        customerName: customer.name.trim(),
+        customerPhone: customer.phone.trim(),
+        deliveryType: customer.deliveryType,
+        cep: customer.cep?.trim() || '',
+        street: customer.street?.trim() || '',
+        number: customer.number?.trim() || '',
+        complement: customer.complement?.trim() || '',
+        neighborhood: customer.neighborhood?.trim() || '',
+        city: customer.city?.trim() || '',
+        state: customer.state?.trim() || '',
+        notes: customer.notes?.trim() || '',
+        items: items.map((item) => ({
+          productId: item.product.id,
+          productName: item.product.name,
+          productImage: item.product.images?.[0] || '',
+          size: item.selectedSize,
+          color: item.selectedColor,
+          price: item.product.price,
+          quantity: item.quantity,
+        })),
+        subtotal,
+        total: subtotal,
+        paymentMethod: 'pix',
+        status: 'pending',
+        stockDeducted: false,
+        receiptImage: finalReceiptImage,
+        createdAt: new Date().toISOString(),
+      };
+
+      // Save order in store state / Supabase
+      onCreateOrder(newOrder);
+
+      // Trigger celebration confetti!
+      try {
+        confetti({
+          particleCount: 80,
+          spread: 70,
+          origin: { y: 0.6 },
+          colors: ['#c5a059', '#1c1917', '#e8decd', '#ffffff'],
+        });
+      } catch {
+        // safe fallback
+      }
+
+      // Generate WhatsApp URL with order ID and receipt notice
+      const whatsappUrl = generateWhatsAppOrderUrl(items, customer, settings, orderId, uploadedReceiptUrl);
+
+      // Open WhatsApp
+      window.open(whatsappUrl, '_blank');
+
+      // Clear cart so client has a clean state
+      handleRemoveReceipt();
+      onClearCart();
+      onClose();
+    } finally {
+      setIsSubmittingOrder(false);
+    }
   };
 
   return (
@@ -602,6 +710,130 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   </button>
                 </div>
               </div>
+
+              {/* PIX Receipt Upload Card (MANDATORY) */}
+              <div
+                id="pix-receipt-section"
+                className={`p-4 rounded-xl border transition-all space-y-3 ${
+                  !receiptPreview
+                    ? 'bg-amber-50/80 border-amber-300 shadow-xs'
+                    : 'bg-emerald-50/80 border-emerald-300 shadow-xs'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5">
+                      <FileCheck className={`w-4 h-4 ${!receiptPreview ? 'text-amber-700' : 'text-emerald-700'}`} />
+                      <span className="text-xs font-bold uppercase tracking-wider text-[#1c1917]">
+                        Comprovante do PIX
+                      </span>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          !receiptPreview
+                            ? 'bg-amber-200 text-amber-900 border border-amber-300'
+                            : 'bg-emerald-200 text-emerald-900 border border-emerald-300'
+                        }`}
+                      >
+                        {!receiptPreview ? 'Obrigatório' : 'Anexado ✓'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[#5c544c] leading-snug">
+                      <strong>Aviso importante:</strong> Para que seu pedido seja liberado e despachado pela Mariane, é obrigatório anexar a foto ou print do comprovante do pagamento PIX.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Hidden File Input */}
+                <input
+                  ref={receiptInputRef}
+                  id="receipt-file-input"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleReceiptFileChange}
+                />
+
+                {!receiptPreview ? (
+                  <div
+                    onClick={() => receiptInputRef.current?.click()}
+                    className="cursor-pointer border-2 border-dashed border-amber-300 hover:border-amber-500 bg-white/90 hover:bg-amber-50 rounded-xl p-4 text-center transition-all group flex flex-col items-center justify-center gap-2.5"
+                  >
+                    <div className="w-12 h-12 rounded-full bg-amber-100/90 text-amber-800 flex items-center justify-center group-hover:scale-110 transition-transform shadow-xs">
+                      <Camera className="w-6 h-6" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-bold text-[#1c1917]">
+                        Anexar Comprovante do PIX
+                      </p>
+                      <p className="text-[11px] text-[#786e64]">
+                        Tire uma foto ou selecione o print do seu banco (JPG, PNG)
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="mt-1 px-4 py-2 bg-[#1c1917] text-white rounded-lg text-xs font-semibold tracking-wide hover:bg-[#322c29] transition-colors flex items-center gap-1.5 shadow-sm"
+                    >
+                      <Upload className="w-3.5 h-3.5 text-[#e6c687]" />
+                      Escolher Comprovante
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-white p-3 rounded-xl border border-emerald-200 flex items-center justify-between gap-3 shadow-xs">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        onClick={() => setShowReceiptZoom(true)}
+                        className="relative cursor-pointer group shrink-0"
+                        title="Clique para ampliar"
+                      >
+                        <img
+                          src={receiptPreview}
+                          alt="Comprovante do PIX"
+                          className="w-12 h-16 object-cover rounded-lg border border-emerald-300 bg-stone-100 group-hover:opacity-85 transition-opacity"
+                        />
+                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 rounded-lg flex items-center justify-center transition-opacity">
+                          <Eye className="w-3.5 h-3.5 text-white" />
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1 text-emerald-800 font-bold text-xs">
+                          <Check className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">Comprovante Anexado!</span>
+                        </div>
+                        <p className="text-[10px] text-[#786e64] truncate mt-0.5 max-w-[170px]">
+                          {receiptFileName || 'comprovante-pix.jpg'}
+                        </p>
+                        <span className="text-[9px] text-emerald-700 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 mt-1 inline-block">
+                          Pronto para enviar no WhatsApp
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5 shrink-0 text-right">
+                      <button
+                        type="button"
+                        onClick={() => receiptInputRef.current?.click()}
+                        className="text-[11px] text-[#8e6e34] hover:text-[#5c441c] hover:underline font-semibold"
+                      >
+                        Trocar foto
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRemoveReceipt}
+                        className="text-[11px] text-rose-600 hover:text-rose-800 hover:underline font-medium"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {isProcessingReceipt && (
+                  <div className="flex items-center gap-2 text-xs text-[#8e6e34] justify-center py-1">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Otimizando imagem do comprovante...</span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -625,23 +857,87 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 </div>
               </div>
 
+              {/* Notice if receipt not yet attached */}
+              {!receiptPreview && (
+                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2 text-amber-900 text-[11px]">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+                  <span>
+                    <strong>Obrigatório:</strong> Anexe o comprovante do PIX acima para liberar o envio do pedido no WhatsApp.
+                  </span>
+                </div>
+              )}
+
               <button
                 type="button"
                 id="cart-submit-order-whatsapp-button"
                 onClick={handleCheckout}
-                className="w-full py-3.5 px-5 bg-[#1b803a] hover:bg-[#156e31] text-white rounded-xl text-xs uppercase tracking-[0.15em] font-semibold transition-all shadow-md flex items-center justify-center gap-2"
+                disabled={isSubmittingOrder}
+                className={`w-full py-3.5 px-5 rounded-xl text-xs uppercase tracking-[0.15em] font-semibold transition-all shadow-md flex items-center justify-center gap-2 ${
+                  !receiptPreview
+                    ? 'bg-amber-600 hover:bg-amber-700 text-white cursor-pointer'
+                    : 'bg-[#1b803a] hover:bg-[#156e31] text-white'
+                }`}
               >
-                <Send className="w-4 h-4" />
-                Finalizar Pedido no WhatsApp
+                {isSubmittingOrder ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    Processando Pedido...
+                  </>
+                ) : !receiptPreview ? (
+                  <>
+                    <Upload className="w-4 h-4" />
+                    Anexar Comprovante PIX para Finalizar
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" />
+                    Finalizar Pedido no WhatsApp (Comprovante Anexado)
+                  </>
+                )}
               </button>
 
               <p className="text-[10px] text-center text-[#8c8278] leading-tight">
-                Você será redirecionada para o WhatsApp da Mariane com seu pedido e dados formatados para confirmação e envio do comprovante Pix.
+                {receiptPreview
+                  ? 'Seu pedido será registrado e você será direcionada para o WhatsApp da Mariane com o comprovante anexado!'
+                  : 'Para finalizar, anexe o comprovante do PIX. O pedido será registrado no painel e enviado para a Mariane no WhatsApp.'}
               </p>
             </div>
           )}
         </div>
       </div>
+
+      {/* Full-size Receipt Zoom Modal */}
+      {showReceiptZoom && receiptPreview && (
+        <div
+          className="fixed inset-0 z-[80] bg-black/80 flex items-center justify-center p-4 backdrop-blur-xs"
+          onClick={() => setShowReceiptZoom(false)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col p-4 space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b pb-2">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-stone-800">
+                Visualização do Comprovante PIX
+              </h4>
+              <button
+                type="button"
+                onClick={() => setShowReceiptZoom(false)}
+                className="p-1 rounded-full text-stone-500 hover:bg-stone-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="overflow-auto max-h-[75vh] flex justify-center bg-stone-50 p-2 rounded-lg border">
+              <img
+                src={receiptPreview}
+                alt="Comprovante Ampliado"
+                className="max-h-[70vh] object-contain rounded"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

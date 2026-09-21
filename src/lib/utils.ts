@@ -15,7 +15,8 @@ export function generateWhatsAppOrderUrl(
   items: CartItem[],
   customer: CustomerOrderData,
   settings: StoreSettings,
-  orderId?: string
+  orderId?: string,
+  receiptUrl?: string
 ): string {
   const total = items.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
   const dateStr = new Date().toLocaleDateString('pt-BR', {
@@ -69,7 +70,11 @@ export function generateWhatsAppOrderUrl(
   message += `• Chave Pix: \`${settings.pixKey}\` (${settings.pixKeyType.toUpperCase()})\n`;
   message += `• Beneficiário: ${settings.pixBeneficiary}\n`;
   message += `• Banco/Cidade: ${settings.pixCity}\n\n`;
-  message += `*Estou enviando este pedido e aguardo a confirmação para transferência do Pix e envio do comprovante! Obrigado(a)!*`;
+  message += `📎 *COMPROVANTE DO PIX:* ✅ Anexado no pedido!\n`;
+  if (receiptUrl && receiptUrl.startsWith('http')) {
+    message += `🔗 *Link do Comprovante:* ${receiptUrl}\n`;
+  }
+  message += `⚠️ *Estou enviando também o print/foto do comprovante aqui nesta conversa para conferência imediata e separação das minhas peças! Muito obrigada!*`;
 
   const encodedMessage = encodeURIComponent(message);
   const targetPhone = cleanPhone(settings.whatsapp);

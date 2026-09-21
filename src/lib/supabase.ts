@@ -323,6 +323,7 @@ export async function fetchRemoteOrders(): Promise<Order[] | null> {
         paymentMethod: item.payment_method || 'pix',
         status: (item.status as OrderStatus) || 'pending',
         stockDeducted: Boolean(item.stock_deducted),
+        receiptImage: item.receipt_image || item.receiptImage || '',
         createdAt: item.created_at || new Date().toISOString(),
       }));
     }
@@ -338,7 +339,7 @@ export async function upsertRemoteOrder(order: Order): Promise<boolean> {
   if (!sb) return false;
 
   try {
-    const { error } = await sb.from('orders').upsert({
+    const payload: any = {
       id: order.id,
       customer_name: order.customerName,
       customer_phone: order.customerPhone,
@@ -358,7 +359,20 @@ export async function upsertRemoteOrder(order: Order): Promise<boolean> {
       status: order.status,
       stock_deducted: order.stockDeducted || false,
       created_at: order.createdAt,
-    });
+    };
+
+    if (order.receiptImage) {
+      payload.receipt_image = order.receiptImage;
+    }
+
+    let { error } = await sb.from('orders').upsert(payload);
+
+    // Resilient fallback: if remote table does not yet have 'receipt_image' column, retry without it
+    if (error && error.message && error.message.includes('receipt_image')) {
+      delete payload.receipt_image;
+      const retry = await sb.from('orders').upsert(payload);
+      error = retry.error;
+    }
 
     if (error) {
       console.error('Supabase upsertOrder error:', error);

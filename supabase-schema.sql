@@ -93,8 +93,12 @@ CREATE TABLE public.orders (
     payment_method TEXT DEFAULT 'pix',
     status TEXT DEFAULT 'pending',
     stock_deducted BOOLEAN DEFAULT false,
+    receipt_image TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Garantir coluna receipt_image em instalações existentes
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS receipt_image TEXT;
 
 -- 5. HABILITAR ROW LEVEL SECURITY (RLS)
 ALTER TABLE public.store_settings ENABLE ROW LEVEL SECURITY;
